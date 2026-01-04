@@ -1,8 +1,11 @@
-﻿#include <QGuiApplication>
+#include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QLocale>
 #include <QTranslator>
+#include <QGuiApplication>
+#include <QQmlApplicationEngine>
+#include <QtQuickControls2/QQuickStyle>
 
 #include "GameBoard.h"
 
@@ -12,6 +15,9 @@ int main(int argc, char *argv[])
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
     QGuiApplication app(argc, argv);
+
+    // 强制使用可自定义的样式，比如 Material
+    QQuickStyle::setStyle("Material");
 
     QTranslator translator;
     const QStringList uiLanguages = QLocale::system().uiLanguages();
@@ -25,7 +31,7 @@ int main(int argc, char *argv[])
 
     GameBoard board;
     QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty("gameBoard", &board);
+    engine.rootContext()->setContextProperty("gameBoardCpp", &board);
     const QUrl url(QStringLiteral("qrc:/main.qml"));
     QObject::connect(
         &engine,

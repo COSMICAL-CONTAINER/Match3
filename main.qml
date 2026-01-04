@@ -1,228 +1,221 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
-import QtQuick.Window 2.15
+import QtQuick.Layouts 1.15
 
-Window {
+ApplicationWindow {
+    id: mainWindow
     visible: true
     width: 400
-    height: 500
-    title: "Match3 Demo"
+    height: 600
+    title: "开心消消乐"
 
-    property int rows: gameBoard.rows
-    property int columns: gameBoard.columns
-    property int cellSize: width / columns
+    property int cellSize: Math.min(width, height * 0.7) / 8
+
+    // 使用正确的上下文属性名
+    property var gameBoard: gameBoardCpp
 
     Rectangle {
         anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "#4A90E2" }
+            GradientStop { position: 1.0; color: "#7B68EE" }
+        }
 
-        Rectangle {
-            id: gameArea
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            height: parent.width    // 保持正方形游戏区
-            color: "black"
-            Repeater {
-                id: boardRepeater
-                model: rows * columns
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
 
-                Rectangle {
-                    id: tileRect
-                    width: cellSize - 2
-                    height: cellSize - 2
-                    radius: 4
-                    border.width: 1
-                    border.color: "gray"
-
-                    property int row: Math.floor(index / columns)
-                    property int col: index % columns
-                    property int targetRow: 0 // 用于动画
-
-                    // 颜色绑定棋盘数据
-                    color: gameBoard.tileAt(row, col)
-
-                    // 位置绑定 row/col
-                    x: col * cellSize
-                    y: row * cellSize
-
-                    Behavior on y { NumberAnimation { duration: 3000; easing.type: Easing.OutBounce } }
-                    Behavior on x { NumberAnimation { duration: 2000; easing.type: Easing.InOutQuad } }
-                    Behavior on color { ColorAnimation { duration: 200 } }
-                    // 交换动画
-                    // ParallelAnimation {
-                    //     id: swapAnim
-                    //     PropertyAnimation { id: animX1; target: tileRect; property: "x"; duration: 120 }
-                    //     PropertyAnimation { id: animY1; target: tileRect; property: "y"; duration: 120 }
-                    //     PropertyAnimation { id: animX2; target: otherTile; property: "x"; duration: 120 }
-                    //     PropertyAnimation { id: animY2; target: otherTile; property: "y"; duration: 120 }
-                    // }
-
-                    // 无效交换抖动动画
-                    SequentialAnimation {
-                        id: shakeAnim
-                        NumberAnimation { target: tileRect; property: "x"; to: tileRect.x + 10; duration: 50 }
-                        NumberAnimation { target: tileRect; property: "x"; to: tileRect.x - 10; duration: 50 }
-                        NumberAnimation { target: tileRect; property: "x"; to: tileRect.x; duration: 50 }
+            // 标题栏
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 60
+                color: "transparent"
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    Text {
+                        text: "开心消消乐"
+                        font.pixelSize: 24
+                        font.bold: true
+                        color: "white"
+                        Layout.alignment: Qt.AlignLeft
                     }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        drag.target: null
-
-                        property real pressX
-                        property real pressY
-
-                        onPressed: function(event) {
-                            pressX = event.x
-                            pressY = event.y
-                            // console.log("Mouse pressed at", pressX, pressY)
+                    Rectangle {
+                        Layout.alignment: Qt.AlignRight
+                        width: 100; height: 40; radius: 20; color: "#FF6B6B"
+                        Text {
+                            anchors.centerIn: parent
+                            text: "分数: " + (gameBoard ? gameBoard.score : 0)
+                            font.pixelSize: 16
+                            color: "white"
+                            font.bold: true
                         }
+                    }
+                }
+            }
 
-                        onReleased: function(event){
+            // 游戏区域 - 简化实现
+            Rectangle {
+                id: gameArea
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.margins: 10
+                color: "#2C3E50"
+                radius: 15
+                border.color: "#34495E"
+                border.width: 3
 
-                            let dx = event.x - pressX
-                            let dy = event.y - pressY
-                            // console.log("Tile released at row:", row, "col:", col, "dx:", dx, "dy:", dy)
+                Grid {
+                    id: boardGrid
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    columns: 8
+                    rows: 8
+                    spacing: 2
 
-                            let targetRow = row
-                            let targetCol = col
+                    Repeater {
+                        id: boardRepeater
+                        model: 64
 
-                            if (Math.abs(dx) > Math.abs(dy)) {
-                                if (dx > cellSize/2) targetCol = col + 1
-                                else if (dx < -cellSize/2) targetCol = col - 1
-                            } else {
-                                if (dy > cellSize/2) targetRow = row + 1
-                                else if (dy < -cellSize/2) targetRow = row - 1
-                            }
+                        Rectangle {
+                            id: tileRect
+                            width: cellSize - 2
+                            height: cellSize - 2
+                            radius: 8
+                            border.width: 2
+                            border.color: Qt.lighter(color, 1.2)
+                            property real offsetX: 0
+                            property real offsetY: 0
+                            x: col * cellSize + offsetX
+                            y: row * cellSize + offsetY
 
-                            var r1 = row
-                            var c1 = col
-                            var r2 = targetRow
-                            var c2 = targetCol
-                            if ((tileRect.row === r1 && tileRect.col === c1) ||
-                                (tileRect.row === r2 && tileRect.col === c2)) {
+                            property int row: Math.floor(index / 8)
+                            property int col: index % 8
+                            property string tileColor: gameBoard ? gameBoard.tileAt(row, col) : "gray"
+                            property bool isMatched: false
+                            color: tileColor
 
-                                var otherRow = (tileRect.row === r1) ? r2 : r1
-                                var otherCol = (tileRect.col === c1) ? c2 : c1
-                                var otherIndex = otherRow * columns + otherCol
-                                var otherTile = boardRepeater.itemAt(otherIndex)
-                                if (!otherTile) return
-
-                                // 动态创建动画
-                                var animQML = `
-                                import QtQuick 2.0;
-                                SequentialAnimation {
-                                    PropertyAnimation { target: tileRect; property: "x"; to: ${otherTile.x+5}; duration: 1 }
-                                    PropertyAnimation { target: tileRect; property: "x"; to: ${otherTile.x-5}; duration: 1 }
-                                    PropertyAnimation { target: tileRect; property: "x"; to: ${tileRect.col*cellSize}; duration: 50 }
-                                    PropertyAnimation { target: tileRect; property: "y"; to: ${otherTile.y+5}; duration: 1 }
-                                    PropertyAnimation { target: tileRect; property: "y"; to: ${otherTile.y-5}; duration: 1 }
-                                    PropertyAnimation { target: tileRect; property: "y"; to: ${tileRect.row*cellSize}; duration: 50 }
+                            // 注册到动画管理器
+                            Component.onCompleted: {
+                                if (animManager) {
+                                    animManager.tileMap[row + "_" + col] = tileRect;
                                 }
-                                `;
-
-
-                                var anim = Qt.createQmlObject(animQML, tileRect);
-                                anim.start();
                             }
 
-                            // console.log("Attempting swap with targetRow:", targetRow, "targetCol:", targetCol)
-                            anim.onStopped.connect(function() {
-                                gameBoard.trySwap(row, col, targetRow, targetCol)
-                            })
-                        }
-                    }
+                            MouseArea {
+                                id: mouseArea
+                                anchors.fill: parent
 
-                    // 无效交换抖动动画
-                    Connections {
-                        target: gameBoard
-                        function onInvalidSwap(r1, c1, r2, c2) {
-                            // console.log("Invalid swap triggered at row:", r, "col:", c)
-                            if ((tileRect.row === r1 && tileRect.col === c1) ||
-                                (tileRect.row === r2 && tileRect.col === c2)) {
-                                shakeAnim.start() // 仅显示 shakeAnim
+                                property int startRow
+                                property int startCol
+                                property bool dragging: false
+
+                                onPressed: function(mouse) {
+                                    dragging = true
+                                    startRow = tileRect.row
+                                    startCol = tileRect.col
+                                    tileRect.scale = 0.9
+                                }
+
+                                onReleased: function(mouse) {
+                                    tileRect.scale = 1.0
+                                    dragging = false
+                                }
+
+                                // onClicked: {
+                                //     // 简化交互：点击相邻方块进行交换
+                                //     // 实际游戏中应该实现拖拽逻辑
+                                //     console.log("Tile clicked:", row, col);
+                                // }
+
+                                onPositionChanged: function(mouse) {
+                                    if (!dragging) return;
+
+                                    // 计算拖动距离
+                                    var dx = mouse.x - mouseArea.width/2
+                                    var dy = mouse.y - mouseArea.height/2
+
+                                    // 这里你可以用阈值判断方向
+                                    if (Math.abs(dx) > cellSize/2 || Math.abs(dy) > cellSize/2) {
+                                        var targetRow = startRow + (Math.abs(dy) > Math.abs(dx) ? (dy>0?1:-1) : 0)
+                                        var targetCol = startCol + (Math.abs(dx) > Math.abs(dy) ? (dx>0?1:-1) : 0)
+
+                                        console.log("Drag from", startRow, startCol, "to", targetRow, targetCol)
+
+                                        if (gameBoard) gameBoard.trySwap(startRow, startCol, targetRow, targetCol)
+
+                                        dragging = false  // 只处理一次拖动
+                                    }
+                                }
+                            }
+
+                            // 匹配动画
+                            Behavior on opacity {
+                                NumberAnimation { duration: 300 }
+                            }
+
+                            Behavior on scale {
+                                NumberAnimation { duration: 200 }
                             }
                         }
                     }
                 }
             }
-            // 技能按钮区
-            Rectangle {
-                id: skillArea
-                anchors.top: gameArea.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                anchors.topMargin: 50   // 这里就可以加 20 像素间距
 
+            // 控制按钮
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 80
+                color: "transparent"
                 Row {
                     anchors.centerIn: parent
-                    spacing: 10
+                    spacing: 20
                     Button {
-                        text: "new"
-                        width: 120
-                        height: 50
-                        onClicked: gameBoard.GameInit()
+                        text: "开始游戏"
+                        onClicked: if (gameBoard) gameBoard.startGame()
                     }
-
                     Button {
-                        text: "random"
-                        width: 120
-                        height: 50
-                        onClicked: gameBoard.shuffleTiles()
+                        text: "重新洗牌"
+                        onClicked: if (gameBoard) gameBoard.shuffleBoard()
+                    }
+                    Button {
+                        text: "重新开始"
+                        onClicked: if (gameBoard) gameBoard.resetGame()
                     }
                 }
             }
-
         }
 
-        // 监听棋盘变化刷新颜色
+        // 连接游戏板信号
         Connections {
             target: gameBoard
+            enabled: gameBoard !== undefined
+
             function onBoardChanged() {
-                // console.log("Board changed, updating tiles...")
-                for (let i = 0; i < rows * columns; ++i) {
-                    let tile = boardRepeater.itemAt(i)
-                    // console.log("Updating tile at row:", tile.row, "col:", tile.col, "new color:", gameBoard.tileAt(tile.row, tile.col))
-                    tile.color = gameBoard.tileAt(tile.row, tile.col)
+                // 刷新所有tile的颜色
+                for (var i = 0; i < 64; i++) {
+                    var item = boardRepeater.itemAt(i);
+                    if (item) {
+                        item.tileColor = gameBoard.tileAt(item.row, item.col);
+                    }
                 }
             }
-        }
-        // 强烈动画
-        // Connections {
-        //     target: gameBoard
-        //     function onTileDropped(fromRow, fromCol, toRow, toCol, color) {
-        //         console.log("onTileDropped:", fromRow, fromCol, "->", toRow, toCol, "color raw:", color, "len:", (color ? color.length : 0))
-        //         var tile = null
-        //         if (fromRow === -1) {
-        //             tile = boardRepeater.itemAt(toRow * columns + toCol)
-        //         } else {
-        //             tile = boardRepeater.itemAt(fromRow * columns + fromCol)
-        //             if (!tile) {
-        //                 // 保底：按 row/col/颜色查找
-        //                 for (var i = 0; i < boardRepeater.count; ++i) {
-        //                     var t = boardRepeater.itemAt(i)
-        //                     if (t && t.row === fromRow && t.col === fromCol) { tile = t; break; }
-        //                 }
-        //             }
-        //         }
-        //         if (!tile) { console.log("drop: cannot find tile", fromRow, fromCol); return }
-        //         // 设颜色之前做个净化（防止空白字符）
-        //         var c = (color ? color.trim() : "")
-        //         tile.row = toRow
-        //         tile.col = toCol
-        //         tile.color = color
-        //     }
-        // }
-        Connections {
-            target: gameBoard
-            function onTileDropped(fromRow, fromCol, toRow, toCol, color) {
-                let tile = boardRepeater.itemAt(toRow * columns + toCol)
-                if (!tile) return
-                tile.row = toRow
-                tile.col = toCol
-                tile.color = color
+
+            function onInvalidSwap(r1, c1, r2, c2) {
+                console.log("无效交换:", r1, c1, r2, c2);
+                // 播放抖动动画
+                var tile1 = animManager.findTile(r1, c1);
+                var tile2 = animManager.findTile(r2, c2);
+                if (tile1) animManager.shakeTile(tile1);
+                if (tile2) animManager.shakeTile(tile2);
             }
         }
+    }
+
+    // 动画管理器
+    AnimationManager {
+        id: animManager
+        boardView: gameArea
+        gameBoard: gameBoardCpp
     }
 }

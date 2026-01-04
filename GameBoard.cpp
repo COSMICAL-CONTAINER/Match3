@@ -1,211 +1,265 @@
 #include "GameBoard.h"
+#include <QRandomGenerator>
 #include <QDebug>
-#include <cstdlib>  // for std::rand, std::srand
-#include <ctime>    // for std::time
+#include <QVariant>
+#include <QList>
+#include <QVector>
+#include <QPoint>
+#include <QTimer>
 
 GameBoard::GameBoard(QObject *parent, int rows, int columns)
-    : QObject(parent), m_rows(rows), m_columns(columns)
+    : QObject(parent), m_rows(rows), m_columns(columns), m_score(0)
 {
-    m_board.resize(m_rows);
-
-    GameInit();
+    m_availableColors = {"red", "green", "blue", "yellow", "purple"};
+    initializeBoard();
 }
 
-void GameBoard::GameInit()
-{
-    // 初始化随机种子
-    std::srand(static_cast<unsigned>(std::time(nullptr)));
-
-    // 可用颜色列表（不含空气）
-    QVector<QString> colors = { "red", "green", "blue", "yellow", "purple" };
-
+void GameBoard::initializeBoard() {
+    m_board.resize(m_rows);
     for (int r = 0; r < m_rows; ++r) {
         m_board[r].resize(m_columns);
-        for (int c = 0; c < m_columns; ++c) {
-            int idx = std::rand() % colors.size();
-            m_board[r][c] = colors[idx]; // 随机颜色
-        }
+        for (int c = 0; c < m_columns; ++c)
+            m_board[r][c] = getRandomColor();
     }
-    // 检查消除
-    QVector<QVector<bool>> toRemove(m_rows, QVector<bool>(m_columns, false));
-
-    while (checkMatches(toRemove))
-    {
-        // 执行消除，生成空格
-        for (int r = 0; r < m_rows; ++r)
-            for (int c = 0; c < m_columns; ++c)
-                if (toRemove[r][c])
-                    m_board[r][c] = "white";
-        dropTiles();
-        generateNewTiles();
-        for (int r = 0; r < m_rows; ++r)
-            toRemove[r].fill(false); // 清零，不重新分配
-    }
+    emit boardChanged();
 }
 
-QString GameBoard::tileAt(int row, int col) const
-{
-    if (row < 0 || row >= m_rows || col < 0 || col >= m_columns) return NULL;
+QString GameBoard::tileAt(int row, int col) const {
+    if (row < 0 || row >= m_rows || col < 0 || col >= m_columns)
+        return "transparent";
     return m_board[row][col];
 }
 
-void GameBoard::trySwap(int r1, int c1, int r2, int c2)
-{
-    // 边界检查
-    if (r2 < 0 || r2 >= m_rows || c2 < 0 || c2 >= m_columns) return;
-    // if (m_board[r1][c1] == "white" || m_board[r2][c2] == "white") return;
+// void GameBoard::trySwap(int r1, int c1, int r2, int c2) {
+//     qDebug() << "尝试交换:" << r1 << c1 << "->" << r2 << c2;
 
-    // 保存棋盘快照
-    QVector<QVector<QString>> backup = m_board;
+//     if (!isValidSwap(r1, c1, r2, c2)) {
+//         qDebug() << "无效交换";
+//         emit invalidSwap(r1, c1, r2, c2);
+//         return;
+//     }
 
-    // 执行交换
-    std::swap(m_board[r1][c1], m_board[r2][c2]);
+//     // 执行交换
+//     std::swap(m_board[r1][c1], m_board[r2][c2]);
+//     emit swapAnimationRequested(r1, c1, r2, c2);
 
-    // 检查消除
-    QVector<QVector<bool>> toRemove(m_rows, QVector<bool>(m_columns, false));
-    if (!checkMatches(toRemove))
-    {
-        m_board = backup; // 无效交换
-        emit invalidSwap(r1, c1, r2, c2);
+//     // 检查匹配
+//     auto matches = findMatches();
+//     if (!matches.isEmpty()) {
+//         qDebug() << "找到匹配，数量:" << matches.size();
+
+//         // 转换为QVariantList用于QML传输
+//         QVariantList variantMatches;
+//         for (const QPoint &pt : matches) {
+//             variantMatches.append(QVariant::fromValue(pt));
+//         }
+//         emit matchAnimationRequested(variantMatches);
+
+//         // 移除匹配的方块
+//         removeMatchedTiles(matches);
+//         emit boardChanged();
+
+//         // 计算掉落路径
+//         auto drops = calculateDropPaths();
+//         QVariantList variantDrops;
+//         for (const auto &path : drops) {
+//             QVariantList pathList;
+//             for (const QPoint &pt : path) {
+//                 qDebug() << pt;
+//                 pathList.append(QVariant::fromValue(pt));
+//             }
+//             qDebug() << "\n";
+//             variantDrops.append(QVariant::fromValue(pathList));
+//         }
+//         emit dropAnimationRequested(variantDrops);
+
+//     }
+//     else
+//     {
+//         // 没有匹配，交换回来
+//         qDebug() << "无匹配，交换回原位置";
+//         std::swap(m_board[r1][c1], m_board[r2][c2]);
+//         emit invalidSwap(r1, c1, r2, c2);
+//     }
+// }
+
+void GameBoard::trySwap(int r1, int c1, int r2, int c2) {
+    qDebug() << "尝试交换:" << r1 << c1 << "->" << r2 << c2;
+
+    if (!isValidSwap(r1, c1, r2, c2)) {
+        qDebug() << "无效交换";
+        emit invalidSwap(r1, c1, r2, c2);   // ❌ 只告诉 QML 播动画
         return;
     }
 
-    bool hasMatch = true;
-    while (hasMatch)
-    {
-        hasMatch = checkMatches(toRemove);
-        if (hasMatch)
-        {
-            for (int r = 0; r < m_rows; ++r)
-                for (int c = 0; c < m_columns; ++c)
-                    if (toRemove[r][c])
-                        m_board[r][c] = "white";
+    emit swapAnimationRequested(r1, c1, r2, c2);  // ✅ 播放有效交换动画
+}
 
-            dropTiles();
-            generateNewTiles();
-            emit boardChanged();
 
-            for (int r = 0; r < m_rows; ++r)
-                toRemove[r].fill(false); // 清零，不重新分配
+Q_INVOKABLE void GameBoard::finalizeSwap(int r1, int c1, int r2, int c2) {
+    // 交换
+    std::swap(m_board[r1][c1], m_board[r2][c2]);
+
+    // 检查匹配
+    auto matches = findMatches();
+    if (!matches.isEmpty()) {
+        qDebug() << "找到匹配，数量:" << matches.size();
+        QVariantList variantMatches;
+        for (const QPoint &pt : matches)
+            variantMatches.append(QVariant::fromValue(pt));
+        emit matchAnimationRequested(variantMatches);
+
+        removeMatchedTiles(matches);
+        emit boardChanged();
+
+        auto drops = calculateDropPaths();
+        QVariantList variantDrops;
+        for (const auto &path : drops) {
+            QVariantList pathList;
+            for (const QPoint &pt : path)
+                pathList.append(QVariant::fromValue(pt));
+            variantDrops.append(QVariant::fromValue(pathList));
         }
+        emit dropAnimationRequested(variantDrops);
+    }
+    else
+    {
+        // 没有匹配 → 回滚动画
+        std::swap(m_board[r1][c1], m_board[r2][c2]); // 恢复
+        emit rollbackSwap(r1, c1, r2, c2);           // ✅ 新信号，只负责动画回滚
     }
 }
 
 
-bool GameBoard::checkMatches(QVector<QVector<bool>> &toRemove)
-{
-    // 横向检查
-    for (int r = 0; r < m_rows; ++r) {
-        for (int c = 0; c <= m_columns - 3; ++c) {
-            QString color = m_board[r][c];
-            if (color != "white" &&
-                color == m_board[r][c+1] &&
-                color == m_board[r][c+2])
-            {
-                toRemove[r][c] = toRemove[r][c+1] = toRemove[r][c+2] = true;
-            }
-        }
+void GameBoard::shuffleBoard() {
+    qDebug() << "重新洗牌";
+    initializeBoard();
+}
+
+void GameBoard::startGame() {
+    qDebug() << "开始游戏";
+    m_score = 0;
+    initializeBoard();
+    emit scoreChanged(m_score);
+}
+
+void GameBoard::resetGame() {
+    qDebug() << "重新开始游戏";
+    startGame();
+}
+
+QString GameBoard::getRandomColor() const {
+    int idx = QRandomGenerator::global()->bounded(m_availableColors.size());
+    return m_availableColors[idx];
+}
+
+// 修复const问题
+bool GameBoard::isValidSwap(int r1, int c1, int r2, int c2) {
+    // 检查边界
+    if (r1 < 0 || r1 >= m_rows || c1 < 0 || c1 >= m_columns ||
+        r2 < 0 || r2 >= m_rows || c2 < 0 || c2 >= m_columns) {
+        return false;
     }
 
-    // 纵向检查
-    for (int c = 0; c < m_columns; ++c) {
-        for (int r = 0; r <= m_rows - 3; ++r) {
-            QString color = m_board[r][c];
-            if (color != "white" &&
-                color == m_board[r+1][c] &&
-                color == m_board[r+2][c])
-            {
-                toRemove[r][c] = toRemove[r+1][c] = toRemove[r+2][c] = true;
-            }
-        }
+    // 检查是否相邻
+    if ((qAbs(r1 - r2) == 1 && c1 == c2) || (qAbs(c1 - c2) == 1 && r1 == r2)) {
+        return true;
     }
 
-    // 如果有检测到的地方
-    for (int r = 0; r < m_rows; ++r)
-        for (int c = 0; c < m_columns; ++c)
-            if (toRemove[r][c])
-                return true;
     return false;
 }
 
-void GameBoard::dropTiles() {
+QVector<QPoint> GameBoard::findMatches() const {
+    QVector<QPoint> matches;
+    QSet<QPoint> matchedSet;
+
+    // 横向匹配
+    for (int r = 0; r < m_rows; ++r) {
+        for (int c = 0; c < m_columns - 2; ++c) {
+            QString color = m_board[r][c];
+            if (!color.isEmpty() &&
+                color == m_board[r][c+1] &&
+                color == m_board[r][c+2]) {
+                matchedSet.insert(QPoint(r, c));
+                matchedSet.insert(QPoint(r, c+1));
+                matchedSet.insert(QPoint(r, c+2));
+            }
+        }
+    }
+
+    // 纵向匹配
+    for (int c = 0; c < m_columns; ++c) {
+        for (int r = 0; r < m_rows - 2; ++r) {
+            QString color = m_board[r][c];
+            if (!color.isEmpty() &&
+                color == m_board[r+1][c] &&
+                color == m_board[r+2][c]) {
+                matchedSet.insert(QPoint(r, c));
+                matchedSet.insert(QPoint(r+1, c));
+                matchedSet.insert(QPoint(r+2, c));
+            }
+        }
+    }
+
+    return matchedSet.values().toVector();
+}
+
+// QVector<QVector<QPoint>> GameBoard::calculateDropPaths() const {
+//     QVector<QVector<QPoint>> dropPaths;
+
+//     // 简化实现：为每个需要掉落的方块创建路径
+//     for (int c = 0; c < m_columns; ++c) {
+//         for (int r = m_rows - 1; r >= 0; --r) {
+//             if (m_board[r][c].isEmpty()) {
+//                 // 查找上方第一个非空方块
+//                 for (int above = r - 1; above >= 0; --above) {
+//                     if (!m_board[above][c].isEmpty()) {
+//                         QVector<QPoint> path;
+//                         path.append(QPoint(above, c));
+//                         path.append(QPoint(r, c));
+//                         dropPaths.append(path);
+//                         break;
+//                     }
+//                 }
+//             }
+//         }
+//     }
+
+//     return dropPaths;
+// }
+
+QVector<QVector<QPoint>> GameBoard::calculateDropPaths() const {
+    QVector<QVector<QPoint>> dropPaths;
+
     for (int c = 0; c < m_columns; ++c) {
         int writeRow = m_rows - 1;
 
-        // 压下非空 tile
         for (int r = m_rows - 1; r >= 0; --r) {
-            if (m_board[r][c] != "white") {
-                if (writeRow != r) {
-                    m_board[writeRow][c] = m_board[r][c];
-                    m_board[r][c] = "white";
-                    // 发信号通知 QML 更新 tile 下落和颜色
-                    emit tileDropped(r, c, writeRow, c, m_board[writeRow][c]);
+            if (!m_board[r][c].isEmpty()) {
+                if (r != writeRow) {
+                    QVector<QPoint> path;
+                    // 生成完整路径 (从 r 到 writeRow)
+                    for (int rr = r; rr <= writeRow; ++rr) {
+                        path.append(QPoint(rr, c));
+                    }
+                    dropPaths.append(path);
                 }
                 writeRow--;
             }
         }
-
-        // 顶部生成新的 tile（白色）并发信号
-        for (int r = writeRow; r >= 0; --r) {
-            m_board[r][c] = "white";
-            // qDebug() << "r:" + QString::number(r) << " c:" + QString::number(c);
-            emit tileDropped(-1, c, r, c, m_board[r][c]);
-        }
     }
-}
-
-void GameBoard::generateNewTiles() {
-    for (int c = 0; c < m_columns; ++c) {
-        for (int r = 0; r < m_rows; ++r) {
-            if (m_board[r][c] == "white") {
-                m_board[r][c] = "white"; // 可以改成随机颜色
-                emit tileDropped(-1, c, r, c, m_board[r][c]);
-            }
-        }
-    }
+    return dropPaths;
 }
 
 
-
-#include <algorithm>
-#include <random>
-
-void GameBoard::shuffleTiles()
-{
-    // 先把棋盘所有 tile 收集到一个一维数组
-    std::vector<QString> tiles;
-    for (int r = 0; r < m_rows; ++r) {
-        for (int c = 0; c < m_columns; ++c) {
-            tiles.push_back(m_board[r][c]);
-        }
+void GameBoard::removeMatchedTiles(const QVector<QPoint> &matches) {
+    for (const QPoint &pt : matches) {
+        m_board[pt.x()][pt.y()] = ""; // 标记为空
     }
+    updateScore(matches.size() * 10);
+}
 
-    // 随机打乱
-    std::random_device rd;
-    std::mt19937 g(rd());
-    std::shuffle(tiles.begin(), tiles.end(), g);
-
-    // 再重新填回棋盘
-    int idx = 0;
-    for (int r = 0; r < m_rows; ++r) {
-        for (int c = 0; c < m_columns; ++c) {
-            m_board[r][c] = tiles[idx++];
-            emit tileDropped(-1, c, r, c, m_board[r][c]); // 通知 QML 更新
-        }
-    }
-
-    // 检查消除
-    QVector<QVector<bool>> toRemove(m_rows, QVector<bool>(m_columns, false));
-    while (checkMatches(toRemove))
-    {
-        // 执行消除，生成空格
-        for (int r = 0; r < m_rows; ++r)
-            for (int c = 0; c < m_columns; ++c)
-                if (toRemove[r][c])
-                    m_board[r][c] = "white";
-        dropTiles();
-        generateNewTiles();
-        for (int r = 0; r < m_rows; ++r)
-            toRemove[r].fill(false); // 清零，不重新分配
-    }
+void GameBoard::updateScore(int points) {
+    m_score += points;
+    emit scoreChanged(m_score);
 }
