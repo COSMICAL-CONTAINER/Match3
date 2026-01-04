@@ -21,6 +21,30 @@ void GameBoard::initializeBoard() {
         for (int c = 0; c < m_columns; ++c)
             m_board[r][c] = getRandomColor();
     }
+
+    // 检查匹配
+    auto matches = findMatches();
+    if (!matches.isEmpty()) {
+        qDebug() << "找到匹配，数量:" << matches.size();
+        QVariantList variantMatches;
+        for (const QPoint &pt : matches)
+            variantMatches.append(QVariant::fromValue(pt));
+        emit matchAnimationRequested(variantMatches);
+
+        removeMatchedTiles(matches);
+        emit boardChanged();
+
+        auto drops = calculateDropPaths();
+        QVariantList variantDrops;
+        for (const auto &path : drops) {
+            QVariantList pathList;
+            for (const QPoint &pt : path)
+                pathList.append(QVariant::fromValue(pt));
+            variantDrops.append(QVariant::fromValue(pathList));
+        }
+        emit dropAnimationRequested(variantDrops);
+    }
+
     emit boardChanged();
 }
 
@@ -88,11 +112,11 @@ void GameBoard::trySwap(int r1, int c1, int r2, int c2) {
 
     if (!isValidSwap(r1, c1, r2, c2)) {
         qDebug() << "无效交换";
-        emit invalidSwap(r1, c1, r2, c2);   // ❌ 只告诉 QML 播动画
+        emit invalidSwap(r1, c1, r2, c2);   //只告诉 QML 播动画
         return;
     }
 
-    emit swapAnimationRequested(r1, c1, r2, c2);  // ✅ 播放有效交换动画
+    emit swapAnimationRequested(r1, c1, r2, c2);  //播放有效交换动画
 }
 
 
@@ -106,13 +130,27 @@ Q_INVOKABLE void GameBoard::finalizeSwap(int r1, int c1, int r2, int c2) {
         qDebug() << "找到匹配，数量:" << matches.size();
         QVariantList variantMatches;
         for (const QPoint &pt : matches)
+        {
+            qDebug () << pt;
             variantMatches.append(QVariant::fromValue(pt));
+        }
         emit matchAnimationRequested(variantMatches);
 
         removeMatchedTiles(matches);
         emit boardChanged();
 
         auto drops = calculateDropPaths();
+
+        // 打印 dropPaths
+        qDebug() << "Drop paths:";
+        for (const auto &path : drops) {
+            QString pathStr;
+            for (const QPoint &pt : path) {
+                pathStr += QString("(%1,%2) ").arg(pt.x()).arg(pt.y());
+            }
+            qDebug() << pathStr.trimmed();
+        }
+
         QVariantList variantDrops;
         for (const auto &path : drops) {
             QVariantList pathList;
@@ -126,7 +164,7 @@ Q_INVOKABLE void GameBoard::finalizeSwap(int r1, int c1, int r2, int c2) {
     {
         // 没有匹配 → 回滚动画
         std::swap(m_board[r1][c1], m_board[r2][c2]); // 恢复
-        emit rollbackSwap(r1, c1, r2, c2);           // ✅ 新信号，只负责动画回滚
+        emit rollbackSwap(r1, c1, r2, c2);           // 新信号，只负责动画回滚
     }
 }
 

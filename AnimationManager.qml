@@ -5,243 +5,173 @@ Item {
     property var boardView
     property var gameBoard
     property var tileMap: ({})
-    property real cellSize: 50  // 可以在主界面传入
-    property bool busy: false   // 全局锁，防止重复输入/二次交换
+    property real cellSize: 50
+    property bool busy: false
 
-    // 连接游戏板信号
+    // ===== 队列 =====
+    property var swapQueue: []
+    property var matchQueue: []
+    property var dropQueue: []
+
+    // ===== 连接游戏板信号 =====
     onGameBoardChanged: {
         if (gameBoard) {
-            gameBoard.swapAnimationRequested.connect(animateSwap);
-            gameBoard.matchAnimationRequested.connect(animateMatches);
-            // gameBoard.dropAnimationRequested.connect(animateDrops);
-            gameBoard.animateRollback.connect(rollbackSwap);
+            gameBoard.swapAnimationRequested.connect(enqueueSwap);
+            gameBoard.matchAnimationRequested.connect(enqueueMatches);
+            // gameBoard.dropAnimationRequested.connect(enqueueDrops);
+            gameBoard.rollbackSwap.connect(rollbackSwap);
             console.log("动画管理器已连接到游戏板");
         }
     }
 
-    function findTile(row, col) {
-        var key = row + "_" + col;
-        return tileMap[key] || null;
+    function findTile(row, col) { return tileMap[row + "_" + col] || null; }
+
+    // ===== 队列入列函数 =====
+    function enqueueSwap(r1,c1,r2,c2){ swapQueue.push({r1:r1,c1:c1,r2:r2,c2:c2}); runNext(); }
+    function enqueueMatches(matchedTiles){ matchQueue.push(matchedTiles); runNext(); }
+    function enqueueDrops(dropPaths){ dropQueue.push(dropPaths); runNext(); }
+
+    // ===== 队列驱动 =====
+    function runNext(){
+        if(busy) return;
+        busy = true;
+        if(swapQueue.length>0){
+            var s=swapQueue.shift();
+            runSwap(s.r1,s.c1,s.r2,s.c2);
+        } else if(matchQueue.length>0){
+            var m=matchQueue.shift();
+            runMatches(m);
+        } else if(dropQueue.length>0){
+            var d=dropQueue.shift();
+            runDrops(d);
+        } else {
+            busy=false;
+        }
     }
 
-    // 交换动画
-    function animateSwap(r1, c1, r2, c2) {
-        if (animManager.busy) return;
-        animManager.busy = true;
+    // ===== 交换动画 =====
+    function runSwap(r1,c1,r2,c2){
+        var t1=findTile(r1,c1), t2=findTile(r2,c2);
+        if(!t1||!t2){ busy=false; runNext(); return; }
+        var dx=(c2-c1)*cellSize, dy=(r2-r1)*cellSize;
 
-        var t1 = findTile(r1, c1);
-        var t2 = findTile(r2, c2);
-        if (!t1 || !t2) { animManager.busy = false; return; }
+        var anim1=Qt.createQmlObject(`import QtQuick 2.15; ParallelAnimation { NumberAnimation { property: "offsetX"; duration: 200 } NumberAnimation { property: "offsetY"; duration: 200 } }`, animManager);
+        anim1.animations[0].target=t1; anim1.animations[0].from=0; anim1.animations[0].to=dx;
+        anim1.animations[1].target=t1; anim1.animations[1].from=0; anim1.animations[1].to=dy;
 
-        var dx = (c2 - c1) * cellSize;
-        var dy = (r2 - r1) * cellSize;
+        var anim2=Qt.createQmlObject(`import QtQuick 2.15; ParallelAnimation { NumberAnimation { property: "offsetX"; duration: 200 } NumberAnimation { property: "offsetY"; duration: 200 } }`, animManager);
+        anim2.animations[0].target=t2; anim2.animations[0].from=0; anim2.animations[0].to=-dx;
+        anim2.animations[1].target=t2; anim2.animations[1].from=0; anim2.animations[1].to=-dy;
 
-        var anim1 = Qt.createQmlObject(`
-            import QtQuick 2.15
-            ParallelAnimation {
-                NumberAnimation { property: "offsetX"; duration: 200 }
-                NumberAnimation { property: "offsetY"; duration: 200 }
-            }
-        `, animManager);
-        anim1.animations[0].target = t1; anim1.animations[0].from = 0; anim1.animations[0].to = dx;
-        anim1.animations[1].target = t1; anim1.animations[1].from = 0; anim1.animations[1].to = dy;
-        anim1.start();
+        var completed=0;
+        function onFinished(){ completed++; if(completed===2){
+            t1.offsetX=0;t1.offsetY=0; t2.offsetX=0;t2.offsetY=0;
+            gameBoard.finalizeSwap(r1,c1,r2,c2);
+            // 更新 tileMap
+            tileMap[r1+"_"+c1]=findTile(r1,c1);
+            tileMap[r2+"_"+c2]=findTile(r2,c2);
+            busy=false; runNext();
+        }}
+        anim1.onFinished.connect(onFinished);
+        anim2.onFinished.connect(onFinished);
+        anim1.start(); anim2.start();
+    }
 
-        var anim2 = Qt.createQmlObject(`
-            import QtQuick 2.15
-            ParallelAnimation {
-                NumberAnimation { property: "offsetX"; duration: 200 }
-                NumberAnimation { property: "offsetY"; duration: 200 }
-            }
-        `, animManager);
-        anim2.animations[0].target = t2; anim2.animations[0].from = 0; anim2.animations[0].to = -dx;
-        anim2.animations[1].target = t2; anim2.animations[1].from = 0; anim2.animations[1].to = -dy;
+    function rollbackSwap(r1,c1,r2,c2){
+        if(busy) return;
+        busy=true;
+        var t1=findTile(r1,c1), t2=findTile(r2,c2);
+        if(!t1||!t2){ busy=false; return; }
 
-        anim2.onFinished.connect(function() {
-            tileMap[r1 + "_" + c1] = t2;
-            tileMap[r2 + "_" + c2] = t1;
-
-            t1.offsetX = 0; t1.offsetY = 0;
-            t2.offsetX = 0; t2.offsetY = 0;
-            animManager.busy = false;
-
-            // ✅ 动画完成后再让 C++ 真正交换
-            gameBoard.finalizeSwap(r1, c1, r2, c2);
+        [t1,t2].forEach(function(t){
+            var rollback=Qt.createQmlObject(`import QtQuick 2.15; ParallelAnimation { NumberAnimation { property: "offsetX"; to:0; duration:200 } NumberAnimation { property: "offsetY"; to:0; duration:200 } }`, animManager);
+            rollback.animations[0].target=t; rollback.animations[1].target=t;
+            rollback.start();
         });
 
-        anim2.start();
-    }
-    function rollbackSwap(r1, c1, r2, c2) {
-        if (animManager.busy) return;
-        animManager.busy = true;
-
-        var t1 = findTile(r1, c1);
-        var t2 = findTile(r2, c2);
-        if (!t1 || !t2) return;
-
-        // 回滚 t1
-        var rollback1 = Qt.createQmlObject(`
-            import QtQuick 2.15
-            ParallelAnimation {
-                NumberAnimation { property: "offsetX"; to: 0; duration: 200 }
-                NumberAnimation { property: "offsetY"; to: 0; duration: 200 }
-            }
-        `, animManager);
-        rollback1.animations[0].target = t1; rollback1.animations[1].target = t1; rollback1.start();
-
-        // 回滚 t2
-        var rollback2 = Qt.createQmlObject(`
-            import QtQuick 2.15
-            ParallelAnimation {
-                NumberAnimation { property: "offsetX"; to: 0; duration: 200 }
-                NumberAnimation { property: "offsetY"; to: 0; duration: 200 }
-            }
-        `, animManager);
-        rollback2.animations[0].target = t2; rollback2.animations[1].target = t2; rollback2.start();
-
-        shakeTile(t1);
-        shakeTile(t2);
-
-        // 保证下次干净
-        t1.offsetX = 0; t1.offsetY = 0;
-        t2.offsetX = 0; t2.offsetY = 0;
-        animManager.busy = false;
+        shakeTile(t1); shakeTile(t2);
+        t1.offsetX=0; t1.offsetY=0; t2.offsetX=0; t2.offsetY=0;
+        busy=false;
     }
 
-
-    // 匹配动画
-    function animateMatches(matchedTiles) {
-        for (var i = 0; i < matchedTiles.length; i++) {
-            var point = matchedTiles[i];
-            var tile = findTile(point.x, point.y);
-            if (!tile) continue;
-
-            tile.scale = 1.2;
-            tile.opacity = 0.5;
-
-            // 缩放动画
-            var animScale = Qt.createQmlObject(`
+    // ===== 匹配动画 =====
+    function runMatches(matchedTiles){
+        if(!matchedTiles||matchedTiles.length===0){ busy=false; runNext(); return; }
+        var pending=matchedTiles.length;
+        matchedTiles.forEach(function(pt){
+            var tile=findTile(pt.x,pt.y);
+            if(!tile){ pending--; return; }
+            var anim=Qt.createQmlObject(`
                 import QtQuick 2.15
-                NumberAnimation { property var targetTile: null; target: targetTile; property string prop: "scale"; to: 1.0; duration: 300 }
+                SequentialAnimation {
+                    ParallelAnimation { NumberAnimation { property:"scale"; to:1.2; duration:150; easing.type:Easing.OutQuad }
+                                       NumberAnimation { property:"opacity"; to:0.5; duration:150; easing.type:Easing.OutQuad } }
+                    ParallelAnimation { NumberAnimation { property:"scale"; to:1.0; duration:150; easing.type:Easing.InQuad }
+                                       NumberAnimation { property:"opacity"; to:1.0; duration:150; easing.type:Easing.InQuad } }
+                }
             `, animManager);
-            animScale.targetTile = tile;
-            animScale.start();
-
-            // 透明度动画
-            var animOpacity = Qt.createQmlObject(`
-                import QtQuick 2.15
-                NumberAnimation { property var targetTile: null; target: targetTile; property string prop: "opacity"; to: 1.0; duration: 300 }
-            `, animManager);
-            animOpacity.targetTile = tile;
-            animOpacity.start();
-        }
+            anim.animations[0].animations[0].target=tile;
+            anim.animations[0].animations[1].target=tile;
+            anim.animations[1].animations[0].target=tile;
+            anim.animations[1].animations[1].target=tile;
+            anim.onFinished.connect(function(){ pending--; if(pending===0){ busy=false; runNext(); } });
+            anim.start();
+        });
     }
 
-    // 掉落动画
-    function animateDrops(dropPaths) {
-        console.log("执行颜色掉落，路径数:", dropPaths.length);
-        if (!dropPaths || dropPaths.length === 0) return;
-        if (animManager.busy) {
-            // 如果正在忙，可以选择缓存或直接丢弃；这里先返回避免冲突
-            console.log("busy, ignore animateColorDrops");
-            return;
-        }
-        animManager.busy = true;
+    // ===== 掉落动画 =====
+    function runDrops(dropPaths){
+        if(!dropPaths||dropPaths.length===0){ busy=false; runNext(); return; }
+        var pending=0;
+        dropPaths.forEach(function(path){
+            for(var j=path.length-1;j>0;j--){
+                var from=path[j-1], to=path[j];
+                var tileFrom=findTile(from.x,from.y), tileTo=findTile(to.x,to.y);
+                if(!tileFrom||!tileTo) continue;
+                tileTo.tileColor=tileFrom.tileColor;
+                tileFrom.tileColor="transparent";
 
-        var paths = dropPaths.slice();    // 复制
-        // 不在这里修改外部 dropPaths（调用方负责），以免影响其他逻辑
-
-        var pending = 0;
-        function animStarted() { pending++; }
-        function animFinished() {
-            pending--;
-            if (pending <= 0) {
-                // 所有掉落动画完成后清理状态
-                animManager.busy = false;
-                // 可在此处触发下一步（如再次检测匹配）
-            }
-        }
-
-        for (var i = 0; i < paths.length; i++) {
-            var path = paths[i];
-            if (!path || path.length < 2) continue;
-
-            // 从下向上逐格传色（保证覆盖时不会破坏上方未处理的颜色）
-            for (var j = path.length - 1; j > 0; j--) {
-                var from = path[j - 1];
-                var to   = path[j];
-
-                var tileFrom = findTile(from.x, from.y);
-                var tileTo   = findTile(to.x, to.y);
-                if (!tileFrom || !tileTo) continue;
-
-                // 记录颜色并传递
-                var color = tileFrom.tileColor;
-                tileTo.tileColor = color;
-                tileFrom.tileColor = "transparent"; // 清空上格（或设为 ""）
-
-                // small animation to simulate drop (scale + fade-in)
-                var anim = Qt.createQmlObject(`
+                var anim=Qt.createQmlObject(`
                     import QtQuick 2.15
                     SequentialAnimation {
-                        NumberAnimation { property: "scale"; from: 1.2; to: 1.0; duration: 150; easing.type: Easing.OutCubic }
-                        NumberAnimation { property: "opacity"; from: 0.6; to: 1.0; duration: 150 }
+                        NumberAnimation { property:"scale"; from:1.2; to:1.0; duration:150; easing.type:Easing.OutCubic }
+                        NumberAnimation { property:"opacity"; from:0.6; to:1.0; duration:150 }
                     }
                 `, animManager);
+                anim.animations[0].target=tileTo;
+                anim.animations[1].target=tileTo;
 
-                // 使用 animations 数组来设置 target
-                if (anim.animations && anim.animations.length > 0) {
-                    anim.animations[0].target = tileTo;
-                    anim.animations[1].target = tileTo;
-                } else {
-                    // 保险回退：直接设置 target 属性（少数 Qt 版本可能差异）
-                    try { anim.children[0].target = tileTo; anim.children[1].target = tileTo; } catch(e) {}
-                }
-
-                // 计数与回调，防止闭包覆盖变量
-                (function(a, t){
-                    animStarted();
-                    a.onFinished.connect(function() {
-                        animFinished();
-                    });
-                    a.start();
-                })(anim, tileTo);
+                pending++;
+                (function(a){ a.onFinished.connect(function(){ pending--; if(pending===0){ busy=false; runNext(); } }); a.start(); })(anim);
             }
 
-            // 如果路径最顶端是 fromRow == -1（表示新生成），我们需要设置最顶格的颜色：
-            var top = path[0];
-            if (top && top.x < 0) {
-                // 需要 C++ 提供新颜色，优雅方法：在 GameBoard 暴露 Q_INVOKABLE QString getRandomColorQml()
-                var newColor = "gray";
-                if (gameBoard && typeof gameBoard.getRandomColorQml === "function")
-                    newColor = gameBoard.getRandomColorQml();
-                var topTile = findTile(top.x, top.y);
-                if (topTile) topTile.tileColor = newColor;
+            var top=path[0];
+            if(top && top.x<0){
+                var newColor="gray";
+                if(gameBoard && typeof gameBoard.getRandomColorQml==="function")
+                    newColor=gameBoard.getRandomColorQml();
+                var topTile=findTile(top.x,top.y);
+                if(topTile) topTile.tileColor=newColor;
             }
-        }
-
-        // 如果没有任何动画被启动（pending==0），立即解锁
-        if (pending === 0) animManager.busy = false;
+        });
+        if(pending===0){ busy=false; runNext(); }
     }
 
-    // 抖动动画
-    function shakeTile(tile) {
-        if (!tile) return;
-        var originalX = tile.x;
-
-        var anim = Qt.createQmlObject(`
+    function shakeTile(tile){
+        if(!tile) return;
+        var origX=tile.x;
+        var anim=Qt.createQmlObject(`
             import QtQuick 2.15
             SequentialAnimation {
-                property var targetTile: null
-                property real origX: 0
-                NumberAnimation { target: targetTile; property: "x"; to: origX + 5; duration: 50 }
-                NumberAnimation { target: targetTile; property: "x"; to: origX - 5; duration: 50 }
-                NumberAnimation { target: targetTile; property: "x"; to: origX; duration: 50 }
+                property var targetTile:null
+                property real origX:0
+                NumberAnimation { target:targetTile; property:"x"; to:origX+5; duration:50 }
+                NumberAnimation { target:targetTile; property:"x"; to:origX-5; duration:50 }
+                NumberAnimation { target:targetTile; property:"x"; to:origX; duration:50 }
             }
         `, animManager);
-
-        anim.targetTile = tile;
-        anim.origX = originalX;
+        anim.targetTile=tile;
+        anim.origX=origX;
         anim.start();
     }
 }

@@ -5,7 +5,7 @@ import QtQuick.Layouts 1.15
 ApplicationWindow {
     id: mainWindow
     visible: true
-    width: 400
+    width: 500
     height: 600
     title: "开心消消乐"
 
