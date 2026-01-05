@@ -18,7 +18,7 @@ Item {
         if (gameBoard) {
             gameBoard.swapAnimationRequested.connect(enqueueSwap);
             gameBoard.matchAnimationRequested.connect(enqueueMatches);
-            // gameBoard.dropAnimationRequested.connect(enqueueDrops);
+            gameBoard.dropAnimationRequested.connect(enqueueDrops);
             gameBoard.rollbackSwap.connect(rollbackSwap);
             console.log("动画管理器已连接到游戏板");
         }
@@ -66,7 +66,7 @@ Item {
         var completed=0;
         function onFinished(){ completed++; if(completed===2){
             t1.offsetX=0;t1.offsetY=0; t2.offsetX=0;t2.offsetY=0;
-            gameBoard.finalizeSwap(r1,c1,r2,c2);
+            gameBoard.finalizeSwap(r1,c1,r2,c2,false);
             // 更新 tileMap
             tileMap[r1+"_"+c1]=findTile(r1,c1);
             tileMap[r2+"_"+c2]=findTile(r2,c2);
@@ -120,6 +120,18 @@ Item {
     }
 
     // ===== 掉落动画 =====
+    function refreshBoardColors() {
+        if (!gameBoard) return;
+        for (var key in tileMap) {
+            var parts = key.split("_");
+            var r = parseInt(parts[0]);
+            var c = parseInt(parts[1]);
+            var tile = tileMap[key];
+            if (tile && typeof gameBoard.getTileColor === "function") {
+                tile.tileColor = gameBoard.getTileColor(r, c);
+            }
+        }
+    }
     function runDrops(dropPaths){
         if(!dropPaths||dropPaths.length===0){ busy=false; runNext(); return; }
         var pending=0;
@@ -154,7 +166,7 @@ Item {
                 if(topTile) topTile.tileColor=newColor;
             }
         });
-        if(pending===0){ busy=false; runNext(); }
+        if(pending===0){ refreshBoardColors(); busy=false; runNext(); }
     }
 
     function shakeTile(tile){

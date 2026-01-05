@@ -25,7 +25,8 @@ public:
     // 核心操作
     Q_INVOKABLE QString tileAt(int row, int col) const;
     Q_INVOKABLE void trySwap(int r1, int c1, int r2, int c2);
-    Q_INVOKABLE void finalizeSwap(int r1, int c1, int r2, int c2);
+    Q_INVOKABLE void finalizeSwap(int r1, int c1, int r2, int c2, bool isRecursion);
+    Q_INVOKABLE void processMatches();
 
     int rows() const { return m_rows; }
     int columns() const { return m_columns; }
@@ -46,10 +47,12 @@ signals:
 
 private:
     void initializeBoard();
+    void fillNewTiles();
     bool isValidSwap(int r1, int c1, int r2, int c2); // 移除const
     QVector<QPoint> findMatches() const;
     QVector<QVector<QPoint>> calculateDropPaths() const;
     void removeMatchedTiles(const QVector<QPoint> &matches);
+    void applyGravity();
     QString getRandomColor() const;
     void updateScore(int points);
 

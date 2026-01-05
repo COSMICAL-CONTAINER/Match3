@@ -22,30 +22,21 @@ void GameBoard::initializeBoard() {
             m_board[r][c] = getRandomColor();
     }
 
-    // 检查匹配
-    auto matches = findMatches();
-    if (!matches.isEmpty()) {
-        qDebug() << "找到匹配，数量:" << matches.size();
-        QVariantList variantMatches;
-        for (const QPoint &pt : matches)
-            variantMatches.append(QVariant::fromValue(pt));
-        emit matchAnimationRequested(variantMatches);
+    finalizeSwap(0,0,0,0,true);
+}
 
-        removeMatchedTiles(matches);
-        emit boardChanged();
+// 补新方块
+void GameBoard::fillNewTiles() {
+    int rows = m_board.size();
+    int cols = m_board[0].size();
 
-        auto drops = calculateDropPaths();
-        QVariantList variantDrops;
-        for (const auto &path : drops) {
-            QVariantList pathList;
-            for (const QPoint &pt : path)
-                pathList.append(QVariant::fromValue(pt));
-            variantDrops.append(QVariant::fromValue(pathList));
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            if (m_board[r][c] == "") {
+                m_board[r][c] = ""; // 5 种颜色
+            }
         }
-        emit dropAnimationRequested(variantDrops);
     }
-
-    emit boardChanged();
 }
 
 QString GameBoard::tileAt(int row, int col) const {
@@ -54,118 +45,83 @@ QString GameBoard::tileAt(int row, int col) const {
     return m_board[row][col];
 }
 
-// void GameBoard::trySwap(int r1, int c1, int r2, int c2) {
-//     qDebug() << "尝试交换:" << r1 << c1 << "->" << r2 << c2;
-
-//     if (!isValidSwap(r1, c1, r2, c2)) {
-//         qDebug() << "无效交换";
-//         emit invalidSwap(r1, c1, r2, c2);
-//         return;
-//     }
-
-//     // 执行交换
-//     std::swap(m_board[r1][c1], m_board[r2][c2]);
-//     emit swapAnimationRequested(r1, c1, r2, c2);
-
-//     // 检查匹配
-//     auto matches = findMatches();
-//     if (!matches.isEmpty()) {
-//         qDebug() << "找到匹配，数量:" << matches.size();
-
-//         // 转换为QVariantList用于QML传输
-//         QVariantList variantMatches;
-//         for (const QPoint &pt : matches) {
-//             variantMatches.append(QVariant::fromValue(pt));
-//         }
-//         emit matchAnimationRequested(variantMatches);
-
-//         // 移除匹配的方块
-//         removeMatchedTiles(matches);
-//         emit boardChanged();
-
-//         // 计算掉落路径
-//         auto drops = calculateDropPaths();
-//         QVariantList variantDrops;
-//         for (const auto &path : drops) {
-//             QVariantList pathList;
-//             for (const QPoint &pt : path) {
-//                 qDebug() << pt;
-//                 pathList.append(QVariant::fromValue(pt));
-//             }
-//             qDebug() << "\n";
-//             variantDrops.append(QVariant::fromValue(pathList));
-//         }
-//         emit dropAnimationRequested(variantDrops);
-
-//     }
-//     else
-//     {
-//         // 没有匹配，交换回来
-//         qDebug() << "无匹配，交换回原位置";
-//         std::swap(m_board[r1][c1], m_board[r2][c2]);
-//         emit invalidSwap(r1, c1, r2, c2);
-//     }
-// }
-
 void GameBoard::trySwap(int r1, int c1, int r2, int c2) {
     qDebug() << "尝试交换:" << r1 << c1 << "->" << r2 << c2;
 
     if (!isValidSwap(r1, c1, r2, c2)) {
         qDebug() << "无效交换";
-        emit invalidSwap(r1, c1, r2, c2);   //只告诉 QML 播动画
+        emit invalidSwap(r1, c1, r2, c2);   // ❌ 只告诉 QML 播动画
         return;
     }
 
-    emit swapAnimationRequested(r1, c1, r2, c2);  //播放有效交换动画
+    emit swapAnimationRequested(r1, c1, r2, c2);  // ✅ 播放有效交换动画
 }
 
 
-Q_INVOKABLE void GameBoard::finalizeSwap(int r1, int c1, int r2, int c2) {
-    // 交换
-    std::swap(m_board[r1][c1], m_board[r2][c2]);
+Q_INVOKABLE void GameBoard::finalizeSwap(int r1, int c1, int r2, int c2, bool isRecursion) {
 
-    // 检查匹配
+    // 如果是第二次处理这个函数则不用交换，相当于不带参数调用此函数
+    if(!isRecursion)
+    {
+        // 真正的交换
+        std::swap(m_board[r1][c1], m_board[r2][c2]);
+        emit boardChanged();
+    }
+    // 检查是否匹配
     auto matches = findMatches();
     if (!matches.isEmpty()) {
         qDebug() << "找到匹配，数量:" << matches.size();
         QVariantList variantMatches;
-        for (const QPoint &pt : matches)
-        {
-            qDebug () << pt;
+        for (const QPoint &pt : matches) {
+            qDebug() << pt;
             variantMatches.append(QVariant::fromValue(pt));
         }
+
+        // 发动画请求，不修改 board
         emit matchAnimationRequested(variantMatches);
-
-        removeMatchedTiles(matches);
-        emit boardChanged();
-
-        auto drops = calculateDropPaths();
-
-        // 打印 dropPaths
-        qDebug() << "Drop paths:";
-        for (const auto &path : drops) {
-            QString pathStr;
-            for (const QPoint &pt : path) {
-                pathStr += QString("(%1,%2) ").arg(pt.x()).arg(pt.y());
-            }
-            qDebug() << pathStr.trimmed();
-        }
-
-        QVariantList variantDrops;
-        for (const auto &path : drops) {
-            QVariantList pathList;
-            for (const QPoint &pt : path)
-                pathList.append(QVariant::fromValue(pt));
-            variantDrops.append(QVariant::fromValue(pathList));
-        }
-        emit dropAnimationRequested(variantDrops);
     }
     else
     {
-        // 没有匹配 → 回滚动画
-        std::swap(m_board[r1][c1], m_board[r2][c2]); // 恢复
-        emit rollbackSwap(r1, c1, r2, c2);           // 新信号，只负责动画回滚
+        if(!isRecursion)
+        {
+            // 没有匹配 → 回滚 → 结束
+            std::swap(m_board[r1][c1], m_board[r2][c2]);
+            emit rollbackSwap(r1, c1, r2, c2);
+            emit boardChanged();
+        }
     }
+}
+
+// 动画完成后调用
+Q_INVOKABLE void GameBoard::processMatches() {
+    auto matches = findMatches();
+    if (matches.isEmpty()) return;
+
+    // 真正移除
+    removeMatchedTiles(matches);
+
+    // 掉落
+    applyGravity();
+
+    // 填充新方块
+    fillNewTiles();
+
+    // 通知 QML 刷新
+    emit boardChanged();
+
+    // 计算掉落路径，发给动画
+    auto drops = calculateDropPaths();
+    QVariantList variantDrops;
+    for (const auto &path : drops) {
+        QVariantList pathList;
+        for (const QPoint &pt : path)
+            pathList.append(QVariant::fromValue(pt));
+        variantDrops.append(QVariant::fromValue(pathList));
+    }
+    emit dropAnimationRequested(variantDrops);
+
+    // 查看掉落完毕后是否还有别的需要处理
+    finalizeSwap(0,0,0,0,true);
 }
 
 
@@ -287,6 +243,20 @@ QVector<QVector<QPoint>> GameBoard::calculateDropPaths() const {
         }
     }
     return dropPaths;
+}
+
+// 把上方的格子往下掉
+void GameBoard::applyGravity() {
+    for (int c = 0; c < m_columns; ++c) {
+        int writeRow = m_rows - 1;
+        for (int r = m_rows - 1; r >= 0; --r) {
+            if (m_board[r][c] != "") {
+                m_board[writeRow][c] = m_board[r][c];
+                if (writeRow != r) m_board[r][c] = "";
+                writeRow--;
+            }
+        }
+    }
 }
 
 

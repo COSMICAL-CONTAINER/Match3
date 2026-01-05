@@ -101,7 +101,13 @@ ApplicationWindow {
                                     animManager.tileMap[row + "_" + col] = tileRect;
                                 }
                             }
-
+                            Image {
+                                anchors.centerIn: parent
+                                width: parent.width * 0.8
+                                height: parent.height * 0.8
+                                fillMode: Image.PreserveAspectFit
+                                source: tileColor == "red" ? "qrc:/C:/Users/Administrator/Desktop/1.jpg" : ""   // 直接拼路径
+                            }
                             MouseArea {
                                 id: mouseArea
                                 anchors.fill: parent
@@ -122,11 +128,11 @@ ApplicationWindow {
                                     dragging = false
                                 }
 
-                                // onClicked: {
-                                //     // 简化交互：点击相邻方块进行交换
-                                //     // 实际游戏中应该实现拖拽逻辑
-                                //     console.log("Tile clicked:", row, col);
-                                // }
+                                onClicked: {
+                                    // 简化交互：点击相邻方块进行交换
+                                    // 实际游戏中应该实现拖拽逻辑
+                                    console.log("Tile clicked:", row, col, "color: ", gameBoard.tileAt(row, col));
+                                }
 
                                 onPositionChanged: function(mouse) {
                                     if (!dragging) return;
@@ -186,11 +192,25 @@ ApplicationWindow {
             }
         }
 
+        Timer {
+            id: animTimer
+            interval: 400   // 匹配动画时长
+            repeat: false
+            onTriggered: {
+                gameBoard.processMatches()
+            }
+        }
+
         // 连接游戏板信号
         Connections {
             target: gameBoard
             enabled: gameBoard !== undefined
 
+            function onMatchAnimationRequested(matches) {
+                console.log("播放匹配动画:", matches)
+                // 播放完动画后调用
+                animTimer.start()
+            }
             function onBoardChanged() {
                 // 刷新所有tile的颜色
                 for (var i = 0; i < 64; i++) {
