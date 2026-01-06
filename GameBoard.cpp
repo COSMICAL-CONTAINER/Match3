@@ -8,21 +8,37 @@
 #include <QTimer>
 
 GameBoard::GameBoard(QObject *parent, int rows, int columns)
-    : QObject(parent), m_rows(rows), m_columns(columns), m_score(0)
+    : QObject(parent), m_comboCnt(0), m_rows(rows), m_columns(columns), m_score(0)
 {
     m_availableColors = {"red", "green", "blue", "yellow", "purple"};
     initializeBoard();
 }
 
+// void GameBoard::initializeBoard() {
+//     m_board.resize(m_rows);
+//     for (int r = 0; r < m_rows; ++r) {
+//         m_board[r].resize(m_columns);
+//         for (int c = 0; c < m_columns; ++c)
+//             m_board[r][c] = getRandomColor();
+//     }
+//     emit boardChanged();
+//     finalizeSwap(0,0,0,0,true);
+// }
 void GameBoard::initializeBoard() {
+    // 只进行棋盘初始化，不执行掉落或三消逻辑
     m_board.resize(m_rows);
-    for (int r = 0; r < m_rows; ++r) {
-        m_board[r].resize(m_columns);
-        for (int c = 0; c < m_columns; ++c)
-            m_board[r][c] = getRandomColor();
-    }
 
-    finalizeSwap(0,0,0,0,true);
+    // 循环生成棋盘，直到没有三消
+    do {
+        for (int r = 0; r < m_rows; ++r) {
+            m_board[r].resize(m_columns);
+            for (int c = 0; c < m_columns; ++c) {
+                m_board[r][c] = getRandomColor();
+            }
+        }
+    } while (!findMatches().isEmpty()); // 检查是否有匹配，如果有匹配则重新生成棋盘
+
+    emit boardChanged();  // 刷新棋盘
 }
 
 // 补新方块
@@ -33,7 +49,7 @@ void GameBoard::fillNewTiles() {
     for (int r = 0; r < rows; ++r) {
         for (int c = 0; c < cols; ++c) {
             if (m_board[r][c] == "") {
-                m_board[r][c] = ""; // 5 种颜色
+                m_board[r][c] = getRandomColor(); // 5 种颜色
             }
         }
     }
@@ -50,16 +66,16 @@ void GameBoard::trySwap(int r1, int c1, int r2, int c2) {
 
     if (!isValidSwap(r1, c1, r2, c2)) {
         qDebug() << "无效交换";
-        emit invalidSwap(r1, c1, r2, c2);   // ❌ 只告诉 QML 播动画
+        emit invalidSwap(r1, c1, r2, c2);   // 只告诉 QML 播动画
         return;
     }
 
-    emit swapAnimationRequested(r1, c1, r2, c2);  // ✅ 播放有效交换动画
+    emit swapAnimationRequested(r1, c1, r2, c2);  // 播放有效交换动画
 }
 
 
-Q_INVOKABLE void GameBoard::finalizeSwap(int r1, int c1, int r2, int c2, bool isRecursion) {
-
+Q_INVOKABLE void GameBoard::finalizeSwap(int r1, int c1, int r2, int c2, bool isRecursion)
+{
     // 如果是第二次处理这个函数则不用交换，相当于不带参数调用此函数
     if(!isRecursion)
     {
@@ -69,19 +85,28 @@ Q_INVOKABLE void GameBoard::finalizeSwap(int r1, int c1, int r2, int c2, bool is
     }
     // 检查是否匹配
     auto matches = findMatches();
-    if (!matches.isEmpty()) {
-        qDebug() << "找到匹配，数量:" << matches.size();
+    if (!matches.isEmpty())
+    {
+        m_comboCnt++;
+        qDebug() << QString("[%1]找到匹配，数量:").arg(m_comboCnt) << matches.size();
         QVariantList variantMatches;
-        for (const QPoint &pt : matches) {
+        for (const QPoint &pt : matches)
+        {
             qDebug() << pt;
             variantMatches.append(QVariant::fromValue(pt));
         }
 
         // 发动画请求，不修改 board
         emit matchAnimationRequested(variantMatches);
+
+        // 发出连击数变化信号
+        if (m_comboCnt > 1) {  // 只在大于 1 连击时发信号
+            emit comboChanged(m_comboCnt);  // 发送连击数
+        }
     }
     else
     {
+        m_comboCnt = 0;
         if(!isRecursion)
         {
             // 没有匹配 → 回滚 → 结束
@@ -95,7 +120,11 @@ Q_INVOKABLE void GameBoard::finalizeSwap(int r1, int c1, int r2, int c2, bool is
 // 动画完成后调用
 Q_INVOKABLE void GameBoard::processMatches() {
     auto matches = findMatches();
-    if (matches.isEmpty()) return;
+    if (matches.isEmpty())
+    {
+        m_comboCnt = 0;
+        return ;
+    }
 
     // 真正移除
     removeMatchedTiles(matches);

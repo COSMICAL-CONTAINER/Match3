@@ -15,7 +15,7 @@ int main(int argc, char *argv[])
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
     QGuiApplication app(argc, argv);
-
+    
     // 强制使用可自定义的样式，比如 Material
     QQuickStyle::setStyle("Material");
 

@@ -13,6 +13,8 @@ class GameBoard : public QObject
     Q_PROPERTY(int rows READ rows CONSTANT)
     Q_PROPERTY(int columns READ columns CONSTANT)
     Q_PROPERTY(int score READ score NOTIFY scoreChanged)
+    Q_PROPERTY(int comboCount READ comboCount NOTIFY comboChanged)
+
 
 public:
     explicit GameBoard(QObject *parent = nullptr, int rows = 8, int columns = 8);
@@ -31,10 +33,12 @@ public:
     int rows() const { return m_rows; }
     int columns() const { return m_columns; }
     int score() const { return m_score; }
-
+    int comboCount() const {return m_comboCnt;}
+    
 signals:
     void boardChanged();
     void scoreChanged(int newScore);
+    void comboChanged(int comboCount);  // 发送连击数
 
     // 动画信号 - 使用QVariantList替代复杂类型
     void swapAnimationRequested(int r1, int c1, int r2, int c2);
@@ -57,6 +61,8 @@ private:
     void updateScore(int points);
 
 private:
+    // 匹配上的次数,有多少连击
+    int m_comboCnt;
     int m_rows;
     int m_columns;
     int m_score;
