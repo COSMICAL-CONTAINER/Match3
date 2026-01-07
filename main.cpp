@@ -15,7 +15,6 @@ int main(int argc, char *argv[])
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
     QGuiApplication app(argc, argv);
-    
     // 强制使用可自定义的样式，比如 Material
     QQuickStyle::setStyle("Material");
 
@@ -32,7 +31,7 @@ int main(int argc, char *argv[])
     GameBoard board;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("gameBoardCpp", &board);
-    const QUrl url(QStringLiteral("qrc:/main.qml"));
+    const QUrl url(QStringLiteral("qrc:/qml/main.qml"));
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreated,
