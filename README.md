@@ -11,6 +11,8 @@ Classic match‑3 puzzle made by Qt. Swap adjacent tiles to make lines of 3 or m
 
 ![play.gif](https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/play.gif?raw=true)
 
+![pause.gif](https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/pause.gif?raw=true)
+
 # 开心消消乐
 
 由Qt制作的经典三消游戏。滑动相邻方块，连成 3 个或以上相同颜色即可消除，方块下落并可触发连击。
