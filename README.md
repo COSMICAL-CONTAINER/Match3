@@ -9,9 +9,9 @@ Classic match‑3 puzzle made by Qt. Swap adjacent tiles to make lines of 3 or m
 - 5 in a row → special power (clears all tiles of a color or swaps for a big clear).  
 - T or L shape → bomb at the intersection (clears tiles in radius 2).
 
-![play.gif](https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/play.gif?raw=true)
+![play.gif](https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/play.gif?raw=true#pic_center)
 
-![pause.gif](https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/pause.gif?raw=true)
+![pause.gif](https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/pause.gif?raw=true#pic_center)
 
 # 开心消消乐
 
