@@ -1,7 +1,9 @@
 ﻿import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+
 import QtMultimedia
+import QtMultimedia 5.15
 
 ApplicationWindow {
     id: mainWindow
@@ -61,7 +63,7 @@ ApplicationWindow {
         if (count === 3) return "qrc:/music/Great.wav";
         if (count === 4) return "qrc:/music/Excellent.wav";
         if (count === 5) return "qrc:/music/Amazing.wav";
-        if (count >= 6) return "qrc:/music/Unbelievable.wav";
+        if (count >= 6) return "qrc:/music/Unbelivable.wav";
         return "";
     }
 
@@ -142,7 +144,7 @@ ApplicationWindow {
             Image {
                 id: shiningBg
                 anchors.centerIn: parent
-                anchors.horizontalCenterOffset: parent.width * 0.18
+                anchors.horizontalCenterOffset: parent.width * 0.3
                 width: parent.width * 0.75
                 height: parent.height * 1.0
                 rotation: 8
@@ -154,19 +156,21 @@ ApplicationWindow {
             Image {
                 id: comboBadge
                 anchors.centerIn: parent
-                anchors.horizontalCenterOffset: parent.width * 0.18
+                anchors.horizontalCenterOffset: parent.width * 0.3
                 width: parent.width * 0.62
                 height: parent.height * 0.82
                 rotation: 12
                 fillMode: Image.PreserveAspectFit
+                // 修复：确保始终返回有效 URL，避免 undefined
                 source: {
                     var cc = (gameBoard ? gameBoard.comboCount : 0);
+                    if (cc < 2) return "qrc:/image/item/transparent.png"; // 占位透明图
                     if (cc === 2) return "qrc:/image/ui/Good.png";
                     if (cc === 3) return "qrc:/image/ui/Great.png";
                     if (cc === 4) return "qrc:/image/ui/Excellent.png";
                     if (cc === 5) return "qrc:/image/ui/Amazing.png";
                     if (cc >= 6) return "qrc:/image/ui/Unbelievable.png";
-                    return "";
+                    return "qrc:/image/item/transparent.png";
                 }
             }
 
@@ -190,6 +194,278 @@ ApplicationWindow {
             }
         }
     }
+    Rectangle {
+        // 绿叶层：每片叶子独立可调位置与大小
+        width: parent.width
+        height: 200
+        color: "transparent"
+        anchors.top: parent.top
+        z: 1
+
+        Item {
+            id: leavesLayer
+            anchors.fill: parent
+
+            // 标题文字
+            Item {
+                id: title
+                x: parent.width / 2 - 100
+                y: -15
+                width: 200; height: 100
+                Image { anchors.fill: parent; source: "qrc:/image/ui/title.png"; smooth: true; fillMode: Image.PreserveAspectFit }
+            }
+            // 叶子1
+            Item {
+                id: leaf1
+                x: 0; y: -10
+                width: 100; height: 50
+                Image { anchors.fill: parent; source: "qrc:/image/ui/leves1.png"; smooth: true; fillMode: Image.PreserveAspectFit }
+            }
+            // 叶子2
+            Item {
+                id: leaf2
+                x: 0; y: 10
+                width: 100; height: 50
+                Image { anchors.fill: parent; source: "qrc:/image/ui/leves2.png"; smooth: true; fillMode: Image.PreserveAspectFit }
+            }
+            // 叶子3
+            Item {
+                id: leaf3
+                x: 70; y: -10
+                width: 100; height: 50
+                Image { anchors.fill: parent; source: "qrc:/image/ui/leves3.png"; smooth: true; fillMode: Image.PreserveAspectFit }
+            }
+            // 叶子4
+            Item {
+                id: leaf4
+                x: parent.width - 120; y: -7
+                width: 90; height: 50
+                Image { anchors.fill: parent; source: "qrc:/image/ui/leves4.png"; smooth: true; fillMode: Image.PreserveAspectFit }
+            }
+            // 叶子5
+            Item {
+                id: leaf5
+                // 右侧对齐：x 由父宽度实时计算 + 动画偏移
+                property int rightMargin: 75
+                property real offsetX: 0
+                x: leavesLayer.width - 75 + offsetX
+                y: 25
+                width: 80; height: 50
+                Image { anchors.fill: parent; source: "qrc:/image/ui/leves5.png"; smooth: true; fillMode: Image.PreserveAspectFit }
+            }
+            // 步数板子
+            Item {
+                id: step
+                x: parent.width - 140; y: -10
+                width: 80; height: 80
+                Image { anchors.fill: parent; source: "qrc:/image/ui/step.png"; smooth: true; fillMode: Image.PreserveAspectFit }
+                Text {
+                    anchors.topMargin: 50
+                    anchors.centerIn: parent
+                    text: "\n步数:\n  " + (gameBoard ? gameBoard.step : 0)
+                    font.pixelSize: 16
+                    color: "white"
+                    font.bold: true
+                }
+            }
+            // 暂停按钮（位于步数板右侧）
+            Item {
+                id: pauseBtn
+                width: 50; height: 50 // 缩小为原来一半
+                x: step.x + step.width + 8
+                y: step.y + 20 // 微调对齐
+                scale: 1.0
+                Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                Image { anchors.fill: parent; source: "qrc:/image/ui/pausebutton.png"; smooth: true; fillMode: Image.PreserveAspectFit }
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onEntered: pauseBtn.scale = 1.25
+                    onExited: pauseBtn.scale = 1.0
+                    onClicked: pauseOverlay.showPause();
+                }
+            }
+        }
+    }
+
+    // 暂停界面覆盖层
+    Item {
+        id: pauseOverlay
+        anchors.fill: parent
+        visible: false
+        z: 9997
+        property bool _pendingRestart: false
+
+        // 新增：对外暴露控制函数，转发到面板
+        function showPause() { pausePanel.showPause(); }
+        function exitPause() { pausePanel.exitPause(); }
+
+        // 背景半透明灰色（仅点击背景才关闭）
+        Rectangle {
+            id: pauseBg
+            anchors.fill: parent
+            color: "#66000000"
+            visible: true
+            z: 0
+        }
+        // 新增：拦截底层输入，避免暂停状态还能操作棋盘
+        MouseArea {
+            id: pauseOverlayBlocker
+            anchors.fill: parent
+            z: 0.1
+            hoverEnabled: true
+            acceptedButtons: Qt.AllButtons
+            preventStealing: true
+            propagateComposedEvents: false
+            onPressed: function(){}
+            onReleased: function(){}
+            onPositionChanged: function(){}
+            onWheel: function(){}
+        }
+
+        Item {
+            id: pausePanel
+            width: 620
+            height: 620
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: -height
+            z: 1
+
+            Image { anchors.fill: parent; source: "qrc:/image/ui/pauseui.png"; fillMode: Image.PreserveAspectFit; smooth: true }
+
+            Column {
+                id: pauseContent
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.top
+                anchors.topMargin: 250 // 保持整体位置不变
+                spacing: 18           // 稍增间距
+
+                Text {
+                    text: "游戏暂停";
+                    color: "white";
+                    font.pixelSize: 24
+                    style: Text.Outline
+                    styleColor: "black"
+                }
+                Text {text: "修改初始步数\n重新开始以应用\n";
+                    color: "#ffffff";
+                    font.pixelSize: 18
+                    style: Text.Outline
+                    styleColor: "black"
+                }
+                // 输入区域下移，并保持位于按钮上方
+                Row {
+                    id: initStepRow
+                    spacing: 8
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    // 可根据需要再往下偏移一点
+                    anchors.topMargin: 20
+
+                    Text { id: initStepLabel; text: "初始步数:"; color: "#ffffff"; font.pixelSize: 18
+                        style: Text.Outline
+                        styleColor: "black"
+                    }
+                    TextField {
+                        id: initStepInput
+                        width: 120; height: 32
+                        placeholderText: "如 25"
+                        validator: IntValidator { bottom: 1; top: 200 }
+                        inputMethodHints: Qt.ImhDigitsOnly
+                        onAccepted: {
+                            var v = parseInt(text);
+                            if (!isNaN(v) && mainWindow.gameBoard) mainWindow.gameBoard.init_step = v;
+                        }
+                        onEditingFinished: {
+                            var v = parseInt(text);
+                            if (!isNaN(v) && mainWindow.gameBoard) mainWindow.gameBoard.init_step = v;
+                        }
+                    }
+                }
+
+                // 调整：将缓冲高度由16改为6，使下方所有按钮整体上移10px
+                Rectangle { width: 1; height: 6; color: "transparent" } // 输入与按钮之间的缓冲（原16）
+
+                Row {
+                    id: pauseButtonsRow
+                    spacing: 16
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    Rectangle {
+                        width: 110; height: 36; radius: 8; color: "#ff6b6b"
+                        Text { anchors.centerIn: parent; text: "重新开始"; color: "white"; font.pixelSize: 15 }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                var v = parseInt(initStepInput.text);
+                                if (!isNaN(v) && mainWindow.gameBoard) mainWindow.gameBoard.init_step = v;
+                                pauseOverlay._pendingRestart = true;
+                                pauseOverlay.exitPause();
+                            }
+                        }
+                    }
+                    Rectangle {
+                        width: 110; height: 36; radius: 8; color: "#4dabf7"
+                        Text { anchors.centerIn: parent; text: "继续游戏"; color: "white"; font.pixelSize: 15 }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                pauseOverlay._pendingRestart = false;
+                                pauseOverlay.exitPause();
+                            }
+                        }
+                    }
+                }
+
+                // 新增：结束本轮游戏（次级按钮，放在两个大按钮下面，居中）
+                Rectangle {
+                    id: endRoundBtn
+                    width: 180
+                    height: 30
+                    radius: 6
+                    color: "#ffffff"
+                    opacity: 0.85
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    border.color: "#888"
+                    border.width: 1
+
+                    Text { anchors.centerIn: parent; text: "结束本轮游戏"; color: "#333"; font.pixelSize: 14 }
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onEntered: endRoundBtn.opacity = 1.0
+                        onExited: endRoundBtn.opacity = 0.85
+                        onClicked: {
+                            // 直接触发结束界面
+                            pauseOverlay._pendingRestart = false;
+                            pauseOverlay.exitPause();
+                            if (gameOverOverlay && typeof gameOverOverlay.showGameOver === "function") {
+                                gameOverOverlay.showGameOver();
+                            }
+                        }
+                    }
+                }
+            }
+
+            function showPause() {
+                pauseOverlay.visible = true;
+                pausePanel.y = -pausePanel.height;
+                var targetY = (mainWindow.height - pausePanel.height) / 2;
+                var anim = Qt.createQmlObject('import QtQuick 2.15; NumberAnimation { property: "y"; duration: 450; easing.type: Easing.OutCubic }', pausePanel);
+                anim.from = pausePanel.y; anim.to = targetY; anim.target = pausePanel; anim.running = true;
+            }
+            function exitPause() {
+                var fromY = pausePanel.y;
+                var toY = -pausePanel.height - 100;
+                var anim = Qt.createQmlObject('import QtQuick 2.15; NumberAnimation { property: "y"; duration: 380; easing.type: Easing.InCubic }', pausePanel);
+                anim.from = fromY; anim.to = toY; anim.target = pausePanel; anim.running = true;
+                anim.onStopped.connect(function(){
+                    pauseOverlay.visible = false;
+                    if (pauseOverlay._pendingRestart && mainWindow.gameBoard) {
+                        mainWindow.gameBoard.resetGame();
+                    }
+                });
+            }
+        }
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -209,17 +485,10 @@ ApplicationWindow {
                 color: "transparent"
                 RowLayout {
                     anchors.fill: parent
-                    anchors.margins: 10
-                    Text {
-                        text: "开心消消乐"
-                        font.pixelSize: 24
-                        font.bold: true
-                        color: "white"
-                        Layout.alignment: Qt.AlignLeft
-                    }
+                    anchors.leftMargin: 20
+                    anchors.topMargin: 30
                     Rectangle {
-                        Layout.alignment: Qt.AlignRight
-                        width: 100; height: 40; radius: 20; color: "#FF6B6B"
+                        width: 100; height: 40; radius: 15; color: "#FF6B6B"
                         Text {
                             anchors.centerIn: parent
                             text: "分数: " + (gameBoard ? gameBoard.score : 0)
@@ -251,6 +520,30 @@ ApplicationWindow {
                 property real offsetY: (height - boardHeight) / 2
 
                 Repeater {
+                    id: backgroundboardRepeater
+                    model: gameArea.rows * gameArea.cols
+                    Rectangle {
+                        id: backgroundtileRect
+                        width: gameArea.cellSize - 2
+                        height: gameArea.cellSize - 2
+                        radius: 8
+                        property int row: Math.floor(index / gameArea.cols)
+                        property int col: index % gameArea.cols
+                        property real offsetX: 0
+                        property real offsetY: 0
+
+                        x: gameArea.offsetX + col * gameArea.cellSize + offsetX
+                        y: gameArea.offsetY + row * gameArea.cellSize + offsetY
+                        Image {
+                            anchors.centerIn: parent
+                            width: parent.width * 1
+                            height: parent.height * 1
+                            fillMode: Image.PreserveAspectFit
+                            source: "qrc:/image/item/transparent.png"
+                        }
+                    }
+                }
+                Repeater {
                     id: boardRepeater
                     model: gameArea.rows * gameArea.cols
 
@@ -272,35 +565,62 @@ ApplicationWindow {
 
                         property string tileColor: (gameBoard ? (gameBoard.tileAt(row, col) === "" ? "transparent" : gameBoard.tileAt(row, col)) : "gray")
                         property bool isMatched: false
-                        color: tileColor
+                        color: "transparent"
                         // 注册到动画管理器
                         Component.onCompleted: {
                             if (animManager) {
                                 animManager.tileMap[row + "_" + col] = tileRect;
                             }
                         }
-                        Image {
+                        // 将火箭方块替换为 GIF，其他保持 PNG
+                        Item {
                             anchors.centerIn: parent
                             width: parent.width * 0.8
                             height: parent.height * 0.8
-                            fillMode: Image.PreserveAspectFit
-                            source: {
-                                if (tileColor == "Rocket_1") {
-                                    return "qrc:/image/item/Rocket_1.png";
-                                } else if (tileColor == "Rocket_2") {
-                                    return "qrc:/image/item/Rocket_2.png";
-                                } else if (tileColor == "Bomb") {
-                                    return "qrc:/image/item/Bomb.png";
-                                } else if (tileColor == "SuperItem") {
-                                    return "qrc:/image/item/SuperItem.png";
-                                } else {
-                                    return ""; // 默认值为空
+
+                            AnimatedImage {
+                                id: tileGif
+                                anchors.fill: parent
+                                // 直接映射：Rocket_1=竖向GIF，Rocket_2=横向GIF
+                                source: (tileRect.tileColor === "Rocket_1")
+                                        ? "qrc:/image/item/Rocket_1.gif"
+                                        : (tileRect.tileColor === "Rocket_2")
+                                            ? "qrc:/image/item/Rocket_2.gif"
+                                            : "qrc:/image/item/transparent.png"
+                                visible: tileRect.tileColor === "Rocket_1" || tileRect.tileColor === "Rocket_2"
+                                playing: visible
+                                cache: false
+                                fillMode: Image.PreserveAspectFit
+                                smooth: true
+                                onVisibleChanged: {
+                                    if (visible) {
+                                        playing = true;
+                                    } else {
+                                        playing = false;
+                                    }
                                 }
+                                onStatusChanged: {
+                                    if (status === Image.Ready && visible) {
+                                        playing = true;
+                                    }
+                                }
+                            }
+
+                            Image {
+                                anchors.fill: parent
+                                // 非火箭时显示静态 PNG；火箭时只给透明占位，避免去加载 Rocket_1.png/Rocket_2.png
+                                visible: !(tileRect.tileColor === "Rocket_1" || tileRect.tileColor === "Rocket_2")
+                                fillMode: Image.PreserveAspectFit
+                                source: (tileRect.tileColor === "Rocket_1" || tileRect.tileColor === "Rocket_2")
+                                        ? "qrc:/image/item/transparent.png"
+                                        : ("qrc:/image/item/" + tileRect.tileColor + ".png")
                             }
                         }
                         MouseArea {
                             id: mouseArea
                             anchors.fill: parent
+                            // 暂停时禁用棋盘交互（双保险：除遮罩拦截外，在控件级别也禁用）
+                            enabled: !pauseOverlay.visible
 
                             property int startRow
                             property int startCol
@@ -319,6 +639,7 @@ ApplicationWindow {
                             }
 
                             onClicked: {
+                                simpleSfx.playExchangeAudio()
                                 var tileColor = gameBoard.tileAt(row, col)
                                 console.log("Tile clicked:", row, col, "color: ", tileColor);
                             }
@@ -336,26 +657,51 @@ ApplicationWindow {
                                     animManager.runBombEffect(row, col);
                                 } else if (tileColor === "SuperItem") {
                                     console.log("播放超级道具动画: ", row, col);
-                                    // 需要统计此时场上最多颜色的方块是啥
-                                    var colorCount = {};  // 用于记录颜色出现的次数
-                                    var mostFrequentColor = ""; // 用于存储出现次数最多的颜色
+                                    // 修改：仅统计上下左右四邻的常规颜色；若无则全盘随机选一种常规颜色
+                                    var colorCount = {};  // 记录颜色出现次数
+                                    var mostFrequentColor = ""; // 周围出现次数最多的颜色
 
-                                    // 遍历整个棋盘，统计每种颜色的出现次数
-                                    for (var r = 0; r < 8; r++) {
-                                        for (var c = 0; c < 8; c++) {
-                                            var color = gameBoard.tileAt(r, c);
-                                            if (color) {
-                                                colorCount[color] = (colorCount[color] || 0) + 1; // 增加该颜色的计数
-                                            }
+                                    // 上下左右四邻
+                                    var dirs = [ [ -1, 0 ], [ 1, 0 ], [ 0, -1 ], [ 0, 1 ] ];
+                                    for (var i = 0; i < dirs.length; i++) {
+                                        var rr = row + dirs[i][0];
+                                        var cc = col + dirs[i][1];
+                                        if (rr < 0 || rr >= gameArea.rows || cc < 0 || cc >= gameArea.cols) continue;
+                                        var color = gameBoard.tileAt(rr, cc);
+                                        // 只统计常规颜色，排除空和道具
+                                        if (color && color !== "" && color !== "Rocket_1" && color !== "Rocket_2" && color !== "Bomb" && color !== "SuperItem") {
+                                            colorCount[color] = (colorCount[color] || 0) + 1;
                                         }
                                     }
 
-                                    // 找到出现次数最多的颜色
-                                    mostFrequentColor = Object.keys(colorCount).reduce(function(a, b) {
-                                        return colorCount[a] > colorCount[b] ? a : b;
-                                    });
-
-                                    animManager.runSuperItemEffect(row, col, mostFrequentColor);
+                                    var keys = Object.keys(colorCount);
+                                    if (keys.length > 0) {
+                                        // 四邻里出现次数最多的颜色
+                                        mostFrequentColor = keys.reduce(function(a, b) {
+                                            return colorCount[a] >= colorCount[b] ? a : b;
+                                        });
+                                        animManager.runSuperItemEffect(row, col, mostFrequentColor);
+                                    } else {
+                                        // 四邻无可用颜色：从全盘常规颜色随机选一个作为激活颜色
+                                        var allColors = {};
+                                        for (var r = 0; r < gameArea.rows; r++) {
+                                            for (var c = 0; c < gameArea.cols; c++) {
+                                                var v = gameBoard.tileAt(r, c);
+                                                if (v && v !== "" && v !== "Rocket_1" && v !== "Rocket_2" && v !== "Bomb" && v !== "SuperItem") {
+                                                    allColors[v] = true;
+                                                }
+                                            }
+                                        }
+                                        var pool = Object.keys(allColors);
+                                        if (pool.length > 0) {
+                                            var idx = Math.floor(Math.random() * pool.length);
+                                            mostFrequentColor = pool[idx];
+                                            console.log("四邻无颜色，随机全盘选择: ", mostFrequentColor);
+                                            animManager.runSuperItemEffect(row, col, mostFrequentColor);
+                                        } else {
+                                            console.log("全盘也无常规颜色，跳过激活");
+                                        }
+                                    }
                                 }
                             }
                             onPositionChanged: function(mouse) {
@@ -373,6 +719,7 @@ ApplicationWindow {
                                     // console.log("Drag from", startRow, startCol, "to", targetRow, targetCol)
 
                                     if (gameBoard) gameBoard.trySwap(startRow, startCol, targetRow, targetCol)
+                                    simpleSfx.playExchangeAudio()
 
                                     dragging = false  // 只处理一次拖动
                                 }
@@ -432,7 +779,7 @@ ApplicationWindow {
 
             function onMatchAnimationRequested(matches) {
                 console.log("播放匹配动画:", matches)
-                if (simpleSfx && simpleSfx.playMatch) simpleSfx.playMatch();
+                if (simpleSfx && simpleSfx.playMatchAudio) simpleSfx.playMatchAudio();
                 animTimer.start()
             }
             function onBoardChanged() {
@@ -479,61 +826,63 @@ ApplicationWindow {
             }
 
             function onBombCreateRequested(bombMatches) {
-                // console.log("播放炸弹动画: ", bombMatches);
+                console.log("生成炸弹动画: ", bombMatches);
                 // runBombEffect(bombMatches);
             }
 
             function onRocketCreateRequested(rocketMatches) {
-                // console.log("播放火箭动画: ", rocketMatches);
+                console.log("生成火箭动画: ", rocketMatches);
                 // animManager.runRocketEffect(rocketMatches);
             }
 
            function onSuperItemCreateRequested(superItemMatches) {
-                // console.log("播放超级道具动画: ", superItemMatches);
+                console.log("生成超级道具动画: ", superItemMatches);
                 // runSuperItemEffect(superItemMatches);
             }
 
             function onPropEffect(row, col, type, color){
                 if (type === 1) {
                     if (simpleSfx && simpleSfx.playPropLimited) simpleSfx.playPropLimited("rocket");
-                    console.log("播放火箭动画: ", row, col);
+                    console.log("播放火箭激活动画: ", row, col);
                     animManager.runRocketEffect(row, col, 1);
                 } else if (type === 2) {
                     if (simpleSfx && simpleSfx.playPropLimited) simpleSfx.playPropLimited("rocket");
-                    console.log("播放火箭动画: ", row, col);
+                    console.log("播放火箭激活动画: ", row, col);
                     animManager.runRocketEffect(row, col, 2);
                 } else if (type === 3) {
                     if (simpleSfx && simpleSfx.playPropLimited) simpleSfx.playPropLimited("bomb");
-                    console.log("播放炸弹动画: ", row, col);
+                    console.log("播放炸弹激活动画: ", row, col);
                     animManager.runBombEffect(row, col);
                 } else if (type === 4) {
                     if (simpleSfx && simpleSfx.playPropLimited) simpleSfx.playPropLimited("super");
-                    console.log("播放超级道具动画: ", row, col);
+                    console.log("播放超级道具激活动画: ", row, col);
                     animManager.runSuperItemEffect(row, col, color);
                 } else if (type === 100) { // Rocket + Rocket combo
                     if (simpleSfx && simpleSfx.playPropLimited) simpleSfx.playPropLimited("rocket");
-                    console.log("播放火箭+火箭合成动画:", row, col);
+                    console.log("播放火箭+火箭激活动画:", row, col);
                     animManager.runComboRocketRocket(row, col);
                 } else if (type === 101) { // Bomb + Bomb combo
                     if (simpleSfx && simpleSfx.playPropLimited) simpleSfx.playPropLimited("bomb");
-                    console.log("播放炸弹+炸弹合成动画:", row, col);
+                    console.log("播放炸弹+炸弹激活动画:", row, col);
                     animManager.runComboBombBomb(row, col);
-                } else if (type === 102) { // Bomb + Rocket combo
-                    if (simpleSfx && simpleSfx.playPropLimited) simpleSfx.playPropLimited("bomb");
-                    console.log("播放炸弹+火箭合成动画:", row, col, "meta:", color);
+                } else if (type === 102) // Bomb + Rocket combo
+                {
+                    // 修复：炸弹+火箭的音效改为火箭音效，与单独火箭一致
+                    if (simpleSfx && simpleSfx.playPropLimited) simpleSfx.playPropLimited("rocket");
+                    console.log("播放炸弹+火箭激活动画:", row, col, "meta:", color);
                     var rocketType = parseInt(color);
                     animManager.runComboBombRocket(row, col, rocketType);
                 } else if (type === 103) { // Super + Bomb combo
                     if (simpleSfx && simpleSfx.playPropLimited) simpleSfx.playPropLimited("super");
-                    console.log("播放超级+炸弹合成动画:", row, col);
+                    console.log("播放超级+炸弹激活动画:", row, col);
                     animManager.runComboSuperBomb(row, col);
                 } else if (type === 104) {// Super + Rocket combo
                     if (simpleSfx && simpleSfx.playPropLimited) simpleSfx.playPropLimited("super");
-                    console.log("播放超级+火箭合成动画:", row, col);
+                    console.log("播放超级+火箭激活动画:", row, col);
                     animManager.runComboSuperRocket(row, col);
                 } else if (type === 105) { // Super + Super combo
                     if (simpleSfx && simpleSfx.playPropLimited) simpleSfx.playPropLimited("super");
-                    console.log("播放超级+超级合成涟漪动画:", row, col);
+                    console.log("播放超级+超级激活涟漪动画:", row, col);
                     animManager.runComboSuperSuper(row, col);
                 }
             }
@@ -551,6 +900,7 @@ ApplicationWindow {
     Item {
         id: simpleSfx
         property real volume: 0.8
+        SoundEffect { id: exchangeSfx;  source: "qrc:/music/Exchange.wav"; volume: simpleSfx.volume }
         SoundEffect { id: match1Sfx; source: "qrc:/music/match1.wav"; volume: simpleSfx.volume }
         SoundEffect { id: match2Sfx; source: "qrc:/music/match2.wav"; volume: simpleSfx.volume }
         SoundEffect { id: match3Sfx; source: "qrc:/music/match3.wav"; volume: simpleSfx.volume }
@@ -607,7 +957,10 @@ ApplicationWindow {
             Qt.callLater(function(){ simpleSfx.volume = prevVol; });
         }
 
-        function playMatch() {
+        function playExchangeAudio() {
+            exchangeSfx.play()
+        }
+        function playMatchAudio() {
             // 改用 MediaPlayer 池播放，避免 SoundEffect 在当前环境不出声的问题
             var r = Math.floor(Math.random() * 4) + 1;
             var url = (r === 1) ? "qrc:/music/match1.wav"
@@ -616,5 +969,7 @@ ApplicationWindow {
                       : "qrc:/music/match4.wav";
             if (mainWindow && mainWindow.playComboSfx) mainWindow.playComboSfx(url);
         }
+
     }
+
 }

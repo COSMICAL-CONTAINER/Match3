@@ -2,31 +2,56 @@
     <qresource prefix="/">
         <file>qml/AnimationManager.qml</file>
         <file>qml/main.qml</file>
+        <file>image/item/blue.png</file>
         <file>image/item/Bomb.png</file>
-        <file>image/item/Rocket_1.png</file>
-        <file>image/item/Rocket_2.png</file>
+        <file>image/item/brown.png</file>
+        <file>image/item/green.png</file>
+        <file>image/item/purple.png</file>
+        <file>image/item/red.png</file>
         <file>image/item/SuperItem.png</file>
+        <file>image/item/yellow.png</file>
         <file>image/ui/Amazing.png</file>
         <file>image/ui/BonusTime.png</file>
         <file>image/ui/Excellent.png</file>
         <file>image/ui/Good.png</file>
         <file>image/ui/Great.png</file>
+        <file>image/item/transparent.png</file>
         <file>image/ui/Shining.png</file>
         <file>image/ui/Unbelievable.png</file>
+        <file>image/ui/leves1.png</file>
+        <file>image/ui/leves2.png</file>
+        <file>image/ui/leves3.png</file>
+        <file>image/ui/leves4.png</file>
+        <file>image/ui/leves5.png</file>
+        <file>image/ui/leves6.png</file>
+        <file>image/ui/step.png</file>
+        <file>image/ui/title.png</file>
+        <file>image/item/Rocket_1.gif</file>
+        <file>image/item/Rocket_2.gif</file>
+        <file>image/Animated/hugebomb.gif</file>
+        <file>image/Animated/smallbomb.gif</file>
+        <file>image/Animated/lighting_circle.gif</file>
+        <file>image/Animated/lighting_H.gif</file>
+        <file>image/Animated/lighting_V.gif</file>
+        <file>image/Animated/hugelighting_H.gif</file>
+        <file>image/Animated/hugelighting_V.gif</file>
+        <file>image/ui/pauseui.png</file>
+        <file>image/ui/pausebutton.png</file>
+        <file>music/Amazing.wav</file>
+        <file>music/Bomb.wav</file>
         <file>music/BonusTime.wav</file>
+        <file>music/drop1.wav</file>
+        <file>music/drop2.wav</file>
         <file>music/Excellent.wav</file>
         <file>music/Good.wav</file>
         <file>music/Great.wav</file>
-        <file>music/Amazing.wav</file>
-        <file>music/drop1.wav</file>
-        <file>music/drop2.wav</file>
         <file>music/match1.wav</file>
         <file>music/match2.wav</file>
         <file>music/match3.wav</file>
         <file>music/match4.wav</file>
-        <file>music/Bomb.wav</file>
         <file>music/rocket.wav</file>
         <file>music/SuperItem.wav</file>
         <file>music/Unbelivable.wav</file>
+        <file>music/Exchange.wav</file>
     </qresource>
 </RCC>

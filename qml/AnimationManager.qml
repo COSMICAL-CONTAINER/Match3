@@ -70,6 +70,7 @@ Item {
         var completed=0;
         function onFinished(){ completed++; if(completed===2){
             t1.offsetX=0;t1.offsetY=0; t2.offsetX=0;t2.offsetY=0;
+            // 后端c++处理匹配结果
             gameBoard.finalizeSwap(r1,c1,r2,c2,false);
             // 更新 tileMap
             tileMap[r1+"_"+c1]=findTile(r1,c1);
@@ -194,68 +195,109 @@ Item {
         if(pending===0){ refreshBoardColors(); if (!commitCalled && gameBoard && typeof gameBoard.commitDrop === "function") { commitCalled = true; gameBoard.commitDrop(); } busy=false; runNext(); }
     }
 
-    // 处理火箭动画
+    // 统一自适应：基于棋盘尺寸生成线性 GIF（行/列）
+    function showLineGifAtRowCol(row, col, isVertical, source, lengthScale, thicknessTiles, durationMs) {
+        if (!boardView) return null;
+        var cell = boardView.cellSize || animManager.cellSize;
+        var rows = boardView.rows || 8;
+        var cols = boardView.columns || 8;
+        var boardCenterX = boardView.offsetX + cols * cell / 2;
+        var boardCenterY = boardView.offsetY + rows * cell / 2;
+        // 长度按整盘尺寸计算，再乘 lengthScale；若资源保持比例导致长度未拉满，改用 Stretch 强制拉伸
+        var length = (isVertical ? (rows * cell) : (cols * cell)) * (lengthScale || 1.0);
+        var thickness = Math.max((thicknessTiles || 1) * cell, cell * 1.8);
+        var localX = isVertical ? (boardView.offsetX + col * cell + cell/2) : boardCenterX;
+        var localY = isVertical ? boardCenterY : (boardView.offsetY + row * cell + cell/2);
+        var mapped = boardView.mapToItem(animManager, localX, localY);
+        var w = isVertical ? thickness : length;
+        var h = isVertical ? length : thickness;
+        var gif = Qt.createQmlObject('import QtQuick 2.15; AnimatedImage { x: ' + (mapped.x - w/2) + '; y: ' + (mapped.y - h/2) + '; width: ' + w + '; height: ' + h + '; z: 9999; source: "' + source + '"; playing: true; cache: false; fillMode: Image.Stretch; smooth: true }', animManager);
+        var killer = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: ' + (durationMs || 700) + '; repeat: false }', animManager);
+        killer.triggered.connect(function(){ if(gif) gif.destroy(); });
+        killer.start();
+        return gif;
+    }
+
+    // 处理火箭动画（自适配尺寸，延长到棋盘边缘）
     function runRocketEffect(row, col, type) {
+        if (!gameBoard || !boardView) { console.error("runRocketEffect: missing gameBoard/boardView"); return; }
+        var isVertical = (type === 1);
+        // 将长度提升到覆盖整行/整列边缘（略加 1.02 余量以避免边界取整导致的缺口）
+        showLineGifAtRowCol(row, col, isVertical,
+                            isVertical ? 'qrc:/image/Animated/lighting_H.gif' : 'qrc:/image/Animated/lighting_V.gif',
+                            1.02, 1.6, 700);
+
         // 收集需要被清除的 tiles（整行或整列）
         var tilesToClear = [];
-        var t;
-        if (type === 1) { // 纵向火箭，清列
-            for (var r = 0; r < 8; ++r) {
-                t = findTile(r, col);
-                if (t) tilesToClear.push(t);
-            }
-        } else { // 横向火箭，清行
-            for (var c = 0; c < 8; ++c) {
-                t = findTile(row, c);
-                if (t) tilesToClear.push(t);
-            }
+        var rows = boardView.rows || 8;
+        var cols = boardView.columns || 8;
+        if (isVertical) {
+            for (var r = 0; r < rows; ++r) { var t = findTile(r, col); if (t) tilesToClear.push(t); }
+        } else {
+            for (var c = 0; c < cols; ++c) { var t2 = findTile(row, c); if (t2) tilesToClear.push(t2); }
         }
-
-        if (tilesToClear.length === 0) {
-            console.error("runRocketEffect: no tiles found for rocket at", row, col);
-            return;
-        }
+        if (tilesToClear.length === 0) { console.error("runRocketEffect: no tiles found for rocket at", row, col); gameBoard.rocketEffectTriggered(row, col, type); return; }
 
         var pending = tilesToClear.length;
         tilesToClear.forEach(function(tile){
-            var anim = Qt.createQmlObject(`
-                import QtQuick 2.15
-                SequentialAnimation {
-                    ParallelAnimation { NumberAnimation { property: "scale"; to: 0; duration: 200; easing.type: Easing.InQuad }
-                                       NumberAnimation { property: "opacity"; to: 0; duration: 200; easing.type: Easing.InQuad } }
-                }
-            `, animManager);
+            var anim = Qt.createQmlObject('import QtQuick 2.15; SequentialAnimation { ParallelAnimation { NumberAnimation { property: "scale"; to: 0; duration: 200; easing.type: Easing.InQuad } NumberAnimation { property: "opacity"; to: 0; duration: 200; easing.type: Easing.InQuad } } }', animManager);
+            // 修正：SequentialAnimation 中只有一个 ParallelAnimation，不能访问 animations[1]
             anim.animations[0].animations[0].target = tile;
             anim.animations[0].animations[1].target = tile;
-            anim.onFinished.connect(function(){
-                // 视觉上隐藏后，不在前端改数据，等待后端处理
-                pending--; if (pending === 0) {
-                    // 所有视觉移除完成后再通知后端实际清除并触发下落
-                    gameBoard.rocketEffectTriggered(row, col, type);
-                }
-            });
+            anim.onFinished.connect(function(){ pending--; if (pending === 0) { gameBoard.rocketEffectTriggered(row, col, type); } });
             anim.start();
         });
     }
 
-
-    // 处理炸弹动画
-    function runBombEffect(row, col) {
-        var tile = findTile(row, col);
-        var radius = 2;
+    // 炸弹+火箭 -> 自适配 hugelighting_* GIF（线长覆盖棋盘边缘，厚度按 3 格）
+    function runComboBombRocket(row, col, rocketType) {
+        console.log("runComboBombRocket: combo at", row, col, "rocketType:", rocketType);
         var affected = [];
-        if (!tile) {
-            console.log("runBombEffect: tile not found for", row, col);
-            // 仍然调用后端以保证逻辑一致
-            gameBoard.bombEffectTriggered(row, col);
-            return;
+        var isVertical = (rocketType === 1);
+        // 延长到棋盘边缘（略加 1.08 余量，确保覆盖）
+        showLineGifAtRowCol(row, col, isVertical,
+                            isVertical ? 'qrc:/image/Animated/hugelighting_H.gif' : 'qrc:/image/Animated/hugelighting_V.gif',
+                            1.08, 3.0, 900);
+        // 收集三行/三列
+        if (isVertical) {
+            for (var dc = -1; dc <= 1; ++dc) {
+                var cc = col + dc; if(cc<0||cc>=8) continue;
+                for (var r = 0; r < 8; ++r) { var t = findTile(r, cc); if(t) affected.push(t); }
+            }
+        } else {
+            for (var dr = -1; dr <= 1; ++dr) {
+                var rr = row + dr; if(rr<0||rr>=8) continue;
+                for (var c = 0; c < 8; ++c) { var t2 = findTile(rr, c); if(t2) affected.push(t2); }
+            }
         }
+        // 去重 + 后端触发
+        var unique = [];
+        var keySet2 = {};
+        affected.forEach(function(t){ var key = t.row + "_" + t.col; if(!keySet2[key]){ keySet2[key]=true; unique.push(t); } });
+        if(unique.length===0){ console.log("runComboBombRocket: none, backend"); gameBoard.bombRocketTriggered(row,col,rocketType); return; }
+        var pending = unique.length;
+        unique.forEach(function(tile){
+            var anim = Qt.createQmlObject('import QtQuick 2.15; SequentialAnimation { ParallelAnimation { NumberAnimation { property:"scale"; to:0; duration:200 } NumberAnimation { property:"opacity"; to:0; duration:200 } } }', animManager);
+            anim.animations[0].animations[0].target = tile; anim.animations[0].animations[1].target = tile;
+            anim.onFinished.connect(function(){ pending--; if(pending===0){ console.log("runComboBombRocket: visuals done, calling backend"); gameBoard.bombRocketTriggered(row,col,rocketType); } });
+            anim.start();
+        });
+    }
 
-        // 收集影响范围内的 tile 对象
+    // 小炸弹
+    function runBombEffect(row, col, color) {
+        console.log("runBombEffect:", row, col, "color:", color);
+        // 播放自适配小炸弹 GIF（5.5 格直径），并在 700ms 后销毁
+        showGifAt(row, col, 'qrc:/image/Animated/smallbomb.gif', 700, { tileSpan: 5.5 });
+
+        // 收集半径 2 的圆形范围内的格子
+        var affected = [];
+        var radius = 2;
         for (var r = row - radius; r <= row + radius; ++r) {
             for (var c = col - radius; c <= col + radius; ++c) {
                 if (r >= 0 && r < 8 && c >= 0 && c < 8) {
-                    if ((r - row)*(r - row) + (c - col)*(c - col) <= radius*radius) {
+                    var dr = r - row, dc = c - col;
+                    if (dr*dr + dc*dc <= radius*radius) {
                         var t = findTile(r, c);
                         if (t) affected.push(t);
                     }
@@ -264,29 +306,37 @@ Item {
         }
 
         if (affected.length === 0) {
-            console.log("runBombEffect: no tiles affected, calling backend");
-            gameBoard.bombEffectTriggered(row, col);
+            console.log("runBombEffect: no tiles, calling backend immediately");
+            gameBoard.bombEffectTriggered(row, col, color);
             return;
         }
 
         var pending = affected.length;
-        // 放大->淡出为炸弹视觉效果
-        affected.forEach(function(t){
-            var anim = Qt.createQmlObject(`
-                import QtQuick 2.15
-                SequentialAnimation { ParallelAnimation { NumberAnimation { property: "scale"; from: 1; to: 1.6; duration: 180; easing.type: Easing.OutQuad }
-                                                       NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 180; easing.type: Easing.OutQuad } } }
-            `, animManager);
-            anim.animations[0].animations[0].target = t;
-            anim.animations[0].animations[1].target = t;
-            anim.onFinished.connect(function(){ pending--; if(pending===0){ gameBoard.bombEffectTriggered(row, col); } });
+        affected.forEach(function(tile){
+            var anim = Qt.createQmlObject('import QtQuick 2.15; SequentialAnimation { ParallelAnimation { NumberAnimation { property:"scale"; from:1; to:1.4; duration:180; easing.type: Easing.OutQuad } NumberAnimation { property:"opacity"; from:1; to:0; duration:180; easing.type: Easing.InQuad } } }', animManager);
+            anim.animations[0].animations[0].target = tile;
+            anim.animations[0].animations[1].target = tile;
+            anim.onFinished.connect(function(){ pending--; if (pending === 0) { gameBoard.bombEffectTriggered(row, col, color); } });
             anim.start();
         });
     }
 
-    // 超级道具
+    // 超级道具 -> 自适配环形光效，直径按棋盘较大边的 1.1 倍（保持原方案）
     function runSuperItemEffect(row, col, color) {
-        console.log("Super Item Effect triggered at position:", row, col, "with color:", color);
+        if (boardView) {
+            var cell = boardView.cellSize || animManager.cellSize;
+            var rows = boardView.rows || 8;
+            var cols = boardView.columns || 8;
+            var maxDiam = Math.max(rows * cell, cols * cell) * 1.1;
+            var tile = findTile(row, col);
+            var localCx = tile ? (tile.x + tile.width/2) : (boardView.offsetX + col * cell + cell/2);
+            var localCy = tile ? (tile.y + tile.height/2) : (boardView.offsetY + row * cell + cell/2);
+            var mappedC = boardView.mapToItem(animManager, localCx, localCy);
+            var cGif = Qt.createQmlObject('import QtQuick 2.15; AnimatedImage { x: ' + (mappedC.x - maxDiam/2) + '; y: ' + (mappedC.y - maxDiam/2) + '; width: ' + maxDiam + '; height: ' + maxDiam + '; z: 9999; source: "qrc:/image/Animated/lighting_circle.gif"; playing: true; cache: false; fillMode: Image.PreserveAspectFit; smooth: true }', animManager);
+            var cTimer = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: 800; repeat: false }', animManager);
+            cTimer.triggered.connect(function(){ if(cGif) cGif.destroy(); });
+            cTimer.start();
+        }
 
         var matchedTiles = [];
         for (var r = 0; r < 8; r++) {
@@ -328,6 +378,13 @@ Item {
     // 火箭+火箭 -> 十字（整行 + 整列）
     function runComboRocketRocket(row, col) {
         console.log("runComboRocketRocket: combo at", row, col);
+        // 新增：横竖各播放一次与单火箭一致的 lighting 线性特效
+        showLineGifAtRowCol(row, col, true,
+                            'qrc:/image/Animated/lighting_H.gif',
+                            1.02, 1.6, 700);
+        showLineGifAtRowCol(row, col, false,
+                            'qrc:/image/Animated/lighting_V.gif',
+                            1.02, 1.6, 700);
         var affected = [];
         for (var c = 0; c < 8; ++c) { var t = findTile(row, c); if(t) affected.push(t); }
         for (var r = 0; r < 8; ++r) { var t2 = findTile(r, col); if(t2) affected.push(t2); }
@@ -348,6 +405,9 @@ Item {
     // 炸弹+炸弹 -> 大范围爆炸（半径4）
     function runComboBombBomb(row, col) {
         console.log("runComboBombBomb: combo at", row, col);
+        // 大炸弹：覆盖约 9.5x9.5 格（500px GIF 更适配），略向上偏移微调
+        showGifAt(row, col, 'qrc:/image/Animated/hugebomb.gif', 950, { tileSpan: 9.5, offsetY: -10 });
+
         var radius = 4;
         var affected = [];
         for (var r = row - radius; r <= row + radius; ++r) {
@@ -369,38 +429,6 @@ Item {
         });
     }
 
-    // 炸弹+火箭 -> 根据火箭方向消除三行/三列
-    function runComboBombRocket(row, col, rocketType) {
-        console.log("runComboBombRocket: combo at", row, col, "rocketType:", rocketType);
-        var affected = [];
-        var t;
-        if (rocketType === 1) {
-            // 纵向火箭 -> 三列
-            for (var dc = -1; dc <= 1; ++dc) {
-                var cc = col + dc; if(cc<0||cc>=8) continue;
-                for (var r = 0; r < 8; ++r) { t = findTile(r, cc); if(t) affected.push(t); }
-            }
-        } else {
-            // 横向火箭 -> 三行
-            for (var dr = -1; dr <= 1; ++dr) {
-                var rr = row + dr; if(rr<0||rr>=8) continue;
-                for (var c = 0; c < 8; ++c) { t = findTile(rr, c); if(t) affected.push(t); }
-            }
-        }
-        // 去重
-        var unique = [];
-        var keySet2 = {};
-        affected.forEach(function(t){ var key = t.row + "_" + t.col; if(!keySet2[key]){ keySet2[key]=true; unique.push(t); } });
-        if(unique.length===0){ console.log("runComboBombRocket: none, backend"); gameBoard.bombRocketTriggered(row,col,rocketType); return; }
-        var pending = unique.length;
-        unique.forEach(function(tile){
-            var anim = Qt.createQmlObject(`import QtQuick 2.15; SequentialAnimation { ParallelAnimation { NumberAnimation { property:"scale"; to:0; duration:200 } NumberAnimation { property:"opacity"; to:0; duration:200 } } }`, animManager);
-            anim.animations[0].animations[0].target = tile; anim.animations[0].animations[1].target = tile;
-            anim.onFinished.connect(function(){ pending--; if(pending===0){ console.log("runComboBombRocket: visuals done, calling backend"); gameBoard.bombRocketTriggered(row,col,rocketType); } });
-            anim.start();
-        });
-    }
-
     // 超级 + 炸弹 -> 先播合成视觉，然后调用后端 superBombTriggered
     function runComboSuperBomb(row, col) {
         console.log("runComboSuperBomb: combo at", row, col);
@@ -415,7 +443,8 @@ Item {
         if (pending === 0) { console.log("runComboSuperBomb: no neighbor visuals, calling backend"); gameBoard.superBombTriggered(row,col); return; }
         neigh.forEach(function(tile){
             var anim = Qt.createQmlObject(`import QtQuick 2.15; SequentialAnimation { NumberAnimation { property:"scale"; to:1.2; duration:120 } NumberAnimation { property:"scale"; to:1.0; duration:120 } }`, animManager);
-            anim.animations[0].target = tile; anim.animations[1].target = tile;
+            anim.animations[0].target = tile;
+            anim.animations[1].target = tile;
             anim.onFinished.connect(function(){ pending--; if(pending===0){ console.log("runComboSuperBomb: visuals done, calling backend"); gameBoard.superBombTriggered(row,col); } });
             anim.start();
         });
@@ -435,7 +464,8 @@ Item {
         if (pending2 === 0) { console.log("runComboSuperRocket: no neighbor visuals, calling backend"); gameBoard.superRocketTriggered(row,col); return; }
         neigh2.forEach(function(tile){
             var anim = Qt.createQmlObject(`import QtQuick 2.15; SequentialAnimation { NumberAnimation { property:"scale"; to:1.15; duration:100 } NumberAnimation { property:"scale"; to:1.0; duration:100 } }`, animManager);
-            anim.animations[0].target = tile; anim.animations[1].target = tile;
+            anim.animations[0].target = tile;
+            anim.animations[1].target = tile;
             anim.onFinished.connect(function(){ pending2--; if(pending2===0){ console.log("runComboSuperRocket: visuals done, calling backend"); gameBoard.superRocketTriggered(row,col); } });
             anim.start();
         });
@@ -534,6 +564,56 @@ Item {
         var t2 = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: 1200; repeat: false }', animManager);
         t2.triggered.connect(function(){ spawnRipplePack(cx, cy, maxSize, 600); wavePunch(300, 1.25); gameBoard.superSuperTriggered(row, col); });
         t2.start();
+    }
+
+    // 通用：在指定棋盘坐标显示一次性 GIF，并在 durationMs 后销毁
+    // opts: { tileSpan: number, width: px, height: px, offsetX: px, offsetY: px }
+    function showGifAt(row, col, source, durationMs, opts) {
+        if (!boardView) return;
+        var tile = findTile(row, col);
+        var cell = boardView.cellSize || animManager.cellSize;
+        var localCx = tile ? (tile.x + tile.width/2) : (boardView.offsetX + col * cell + cell/2);
+        var localCy = tile ? (tile.y + tile.height/2) : (boardView.offsetY + row * cell + cell/2);
+
+        // 将棋盘内坐标映射到 animManager 全局坐标，消除顶部信息区偏移影响
+        var mapped = boardView.mapToItem(animManager, localCx, localCy);
+        var cx = mapped.x;
+        var cy = mapped.y;
+
+        var w, h;
+        if (opts && (opts.width || opts.height)) {
+            w = opts.width || (opts.height || cell);
+            h = opts.height || w;
+        } else if (opts && opts.tileSpan) {
+            w = cell * opts.tileSpan;
+            h = cell * opts.tileSpan;
+        } else {
+            // 根据资源自动放大默认尺寸（不改路径，仅根据名字判断）
+            var srcStr = String(source);
+            if (srcStr.indexOf('smallbomb') !== -1) {
+                w = cell * 5.5; h = w;
+            } else if (srcStr.indexOf('hugebomb') !== -1) {
+                w = cell * 9.5; h = w;
+            } else {
+                w = cell * 1.2; h = w;
+            }
+        }
+        var ox = (opts && opts.offsetX) ? opts.offsetX : 0;
+        var oy = (opts && opts.offsetY) ? opts.offsetY : 0;
+        var x = cx - w/2 + ox;
+        var y = cy - h/2 + oy;
+
+        var gif = Qt.createQmlObject(
+            'import QtQuick 2.15; AnimatedImage { ' +
+            '    x: ' + x + '; y: ' + y + '; width: ' + w + '; height: ' + h + '; ' +
+            '    z: 9999; source: "' + source + '"; playing: true; cache: false; ' +
+            '    fillMode: Image.PreserveAspectFit; smooth: true; ' +
+            '}', animManager);
+
+        var killer = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: ' + durationMs + '; repeat: false }', animManager);
+        killer.triggered.connect(function(){ if (gif) gif.destroy(); });
+        killer.start();
+        return gif;
     }
 
 }

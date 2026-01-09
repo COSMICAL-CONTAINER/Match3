@@ -17,20 +17,10 @@ inline uint qHash(const QPoint &point, uint seed = 0) {
 GameBoard::GameBoard(QObject *parent, int rows, int columns)
     : QObject(parent), m_comboCnt(0), m_rows(rows), m_columns(columns), m_score(0), m_comboPending(false)
 {
-    m_availableColors = {"red", "green", "blue", "yellow", "purple"};
+    m_step = m_init_step;
+    m_availableColors = {"red", "green", "blue", "yellow", "purple", "brown"};
     initializeBoard();
 }
-
-// void GameBoard::initializeBoard() {
-//     m_board.resize(m_rows);
-//     for (int r = 0; r < m_rows; ++r) {
-//         m_board[r].resize(m_columns);
-//         for (int c = 0; c < m_columns; ++c)
-//             m_board[r][c] = getRandomColor();
-//     }
-//     emit boardChanged();
-//     finalizeSwap(0,0,0,0,true);
-// }
 
 void GameBoard::initializeBoard() {
     // 只进行棋盘初始化，不执行掉落或三消逻辑
@@ -108,158 +98,114 @@ void GameBoard::trySwap(int r1, int c1, int r2, int c2) {
     emit swapAnimationRequested(r1, c1, r2, c2);        // 播放请求交换动画
 }
 
-
-Q_INVOKABLE void GameBoard::finalizeSwap(int r1, int c1, int r2, int c2, bool isRecursion)
-{
+// qml交换动画完成之后调用此函数
+Q_INVOKABLE void GameBoard::finalizeSwap(int r1, int c1, int r2, int c2, bool isRecursion){
     qDebug() << "finalizeSwap called:" << QPoint(r1,c1) << "->" << QPoint(r2,c2) << "isRecursion:" << isRecursion;
 
-    // 如果当前有组合正在等待视觉显示或处理，跳过额外的 finalize 调用以避免重复/递归
+    // 若标记挂起但队列已空，自动解除，避免后续阻塞
+    if (m_comboPending && m_pendingActivations.isEmpty()) {
+        qDebug() << "finalizeSwap: comboPending true but no pendingActivations, auto-reset";
+        m_comboPending = false;
+    }
     if (m_comboPending) {
         qDebug() << "finalizeSwap: combo pending, skipping to avoid re-entry";
         return;
     }
 
+    bool stepDeducted = false;
     QString preA = ""; QString preB = "";
     if (!isRecursion) {
         preA = m_board[r1][c1];
         preB = m_board[r2][c2];
         qDebug() << "finalizeSwap: pre-swap values:" << QPoint(r1,c1) << preA << QPoint(r2,c2) << preB << "isProp:" << isProp(preA) << isProp(preB);
-
-        // 执行交换
         std::swap(m_board[r1][c1], m_board[r2][c2]);
         qDebug() << "finalizeSwap: post-swap values:" << QPoint(r1,c1) << m_board[r1][c1] << QPoint(r2,c2) << m_board[r2][c2];
         emit boardChanged();
     }
 
-    // 检查是否是道具之间的组合（尤其是超级+超级）
-    bool aIsProp = isProp(preA);
-    bool bIsProp = isProp(preB);
+    // 1) 首先判定：双道具组合（只触发组合效果，绝不触发单体）
+    const bool aIsProp = isProp(preA);
+    const bool bIsProp = isProp(preB);
     if (aIsProp && bIsProp) {
-        qDebug() << "finalizeSwap: both sides are props, prefer combo. preA:" << preA << "preB:" << preB;
-        // 标记组合处理中，避免递归
+        qDebug() << "finalizeSwap: both sides are props, trigger combo only. preA:" << preA << "preB:" << preB;
         m_comboPending = true;
-        // 超级+超级 -> 发射组合效果 105，让 QML 播涟漪动画
-        if ((preA == SuperItem) && (preB == SuperItem)) {
-            qDebug() << "finalizeSwap: Super+Super combo detected at" << QPoint(r2,c2);
-            // 不要直接调用 superItemEffectTriggered，也不要清空格子，交由前端动画后端再触发
+        if (!isRecursion && !stepDeducted) { updateStep(-1); stepDeducted = true; }
+        // 标记本次组合的两个参与点，后续组合效果与调度层都会跳过它们
+        markComboParticipants(r1, c1, r2, c2);
+
+        // 超级+超级
+        if (preA == SuperItem && preB == SuperItem) {
             schedulePropEffect(r2, c2, Combo_SuperSuperType, QString(), 0);
             return;
         }
-        // 其他组合保留原逻辑（如超级+火箭、炸弹+火箭等）
-        // ...existing code for other combos...
+        // 超级+炸弹
+        if ((preA == SuperItem && preB == Bomb) || (preB == SuperItem && preA == Bomb)) {
+            schedulePropEffect(r2, c2, Combo_SuperBombType, QString(), 0);
+            return;
+        }
+        // 超级+火箭
+        if ((preA == SuperItem && isRocket(preB)) || (preB == SuperItem && isRocket(preA))) {
+            schedulePropEffect(r2, c2, Combo_SuperRocketType, QString(), 0);
+            return;
+        }
+        // 火箭+火箭
+        if (isRocket(preA) && isRocket(preB)) {
+            schedulePropEffect(r2, c2, Combo_RocketRocketType, QString(), 0);
+            return;
+        }
+        // 炸弹+炸弹
+        if (isBomb(preA) && isBomb(preB)) {
+            schedulePropEffect(r2, c2, Combo_BombBombType, QString(), 0);
+            return;
+        }
+        // 炸弹+火箭（记录火箭类型）
+        if ((isBomb(preA) && isRocket(preB)) || (isRocket(preA) && isBomb(preB))) {
+            int rocketType = isRocket(preA) ? (preA==Rocket_UpDown?Rocket_UpDownType:Rocket_LeftRightType)
+                                            : (preB==Rocket_UpDown?Rocket_UpDownType:Rocket_LeftRightType);
+            schedulePropEffect(r2, c2, Combo_BombRocketType, QString::number(rocketType), 0);
+            return;
+        }
+        // 未覆盖的道具组合，直接返回避免单体触发
+        return;
     }
 
+    // 2) 其次判定：道具 + 普通颜色（只触发单体对应效果）
+    if ((aIsProp && !bIsProp) || (!aIsProp && bIsProp)) {
+        qDebug() << "finalizeSwap: prop + color, trigger single effect. preA:" << preA << "preB:" << preB;
+        m_comboPending = true;
+        if (!isRecursion && !stepDeducted) { updateStep(-1); stepDeducted = true; }
+        if (aIsProp) {
+            if (preA == Rocket_UpDown)      schedulePropEffect(r2, c2, Rocket_UpDownType, preB, 0);
+            else if (preA == Rocket_LeftRight) schedulePropEffect(r2, c2, Rocket_LeftRightType, preB, 0);
+            else if (preA == Bomb)          schedulePropEffect(r2, c2, BombType, preB, 0);
+            else if (preA == SuperItem && !preB.isEmpty()) schedulePropEffect(r2, c2, SuperItemType, preB, 0);
+        } else {
+            if (preB == Rocket_UpDown)      schedulePropEffect(r1, c1, Rocket_UpDownType, preA, 0);
+            else if (preB == Rocket_LeftRight) schedulePropEffect(r1, c1, Rocket_LeftRightType, preA, 0);
+            else if (preB == Bomb)          schedulePropEffect(r1, c1, BombType, preA, 0);
+            else if (preB == SuperItem && !preA.isEmpty()) schedulePropEffect(r1, c1, SuperItemType, preA, 0);
+        }
+        emit boardChanged();
+        return;
+    }
+
+    // 3) 再判定：普通匹配（三消/四消/五消），有效行动扣步
     auto matches = findMatches(r1, c1, r2, c2, true);
     if (!matches.isEmpty()) {
         m_comboCnt++;
-
-        // 如果交换产生匹配，同时交换前有道具与普通块交换（例如炸弹与颜色），优先触发道具而非普通三消
-        bool preAIsProp = isProp(preA);
-        bool preBIsProp = isProp(preB);
-        if ((preAIsProp && !preBIsProp) || (preBIsProp && !preAIsProp)) {
-            qDebug() << "finalizeSwap: match detected but pre-swap prop vs color present, prefer prop activation. preA:" << preA << "preB:" << preB;
-            // 统一用调度 + 置 pending
-            m_comboPending = true;
-            if (preAIsProp) {
-                if (preA == Rocket_UpDown) schedulePropEffect(r2, c2, Rocket_UpDownType, preB, 0);
-                else if (preA == Rocket_LeftRight) schedulePropEffect(r2, c2, Rocket_LeftRightType, preB, 0);
-                else if (preA == Bomb) schedulePropEffect(r2, c2, BombType, preB, 0);
-                else if (preA == SuperItem) { if (!preB.isEmpty()) schedulePropEffect(r2, c2, SuperItemType, preB, 0); }
-            } else {
-                if (preB == Rocket_UpDown) schedulePropEffect(r1, c1, Rocket_UpDownType, preA, 0);
-                else if (preB == Rocket_LeftRight) schedulePropEffect(r1, c1, Rocket_LeftRightType, preA, 0);
-                else if (preB == Bomb) schedulePropEffect(r1, c1, BombType, preA, 0);
-                else if (preB == SuperItem) { if (!preA.isEmpty()) schedulePropEffect(r1, c1, SuperItemType, preA, 0); }
-            }
-            emit boardChanged();
-            return; // 交由 QML 播放道具动画并在视觉结束后调用 trigger
-        }
-
+        if (!isRecursion && !stepDeducted) { updateStep(-1); stepDeducted = true; }
         QVariantList variantMatches;
-        for (const QPoint &pt : matches)
-        {
-            variantMatches.append(QVariant::fromValue(pt));
-        }
-
-        // 发送匹配动画请求
+        for (const QPoint &pt : matches) { variantMatches.append(QVariant::fromValue(pt)); }
         emit matchAnimationRequested(variantMatches);
-
-        if (m_comboCnt > 1) {
-            emit comboChanged(m_comboCnt);
-        }
+        if (m_comboCnt > 1) emit comboChanged(m_comboCnt);
+        return;
     }
-    else
-    {
-        m_comboCnt = 0;
 
-        if (!isRecursion) {
-            // 没有匹配：如果双方都不是道具，则回滚交换；否则按道具/组合处理
-            QString a = m_board[r1][c1];
-            QString b = m_board[r2][c2];
-
-            bool aNowIsProp = isProp(a);
-            bool bNowIsProp = isProp(b);
-
-            if (!aNowIsProp && !bNowIsProp) {
-                // 回滚
-                std::swap(m_board[r1][c1], m_board[r2][c2]);
-                emit rollbackSwap(r1, c1, r2, c2);
-                emit boardChanged();
-                return;
-            }
-
-            // 有道具参与但未形成匹配，检查是否应触发组合或单体道具
-            if (aNowIsProp && bNowIsProp) {
-                qDebug() << "finalizeSwap: both sides are props but no match, handle combo at" << QPoint(r2,c2) << "a:" << a << "b:" << b;
-                m_comboPending = true;
-                // 超级相关优先
-                if (a == SuperItem && b == SuperItem) {
-                    schedulePropEffect(r2, c2, Combo_SuperSuperType, QString(), 0);
-                    emit boardChanged(); return;
-                }
-                if (a == SuperItem || b == SuperItem) {
-                    if ((a == SuperItem && b == Bomb) || (b == SuperItem && a == Bomb)) {
-                        schedulePropEffect(r2, c2, Combo_SuperBombType, QString(), 0);
-                        emit boardChanged(); return;
-                    }
-                    if ((a == SuperItem && isRocket(b)) || (b == SuperItem && isRocket(a))) {
-                        schedulePropEffect(r2, c2, Combo_SuperRocketType, QString(), 0);
-                        emit boardChanged(); return;
-                    }
-                }
-                // 火箭+火箭
-                if (isRocket(a) && isRocket(b)) {
-                    schedulePropEffect(r2, c2, Combo_RocketRocketType, QString(), 0);
-                    emit boardChanged(); return;
-                }
-                // 炸弹+炸弹
-                if (isBomb(a) && isBomb(b)) {
-                    schedulePropEffect(r2, c2, Combo_BombBombType, QString(), 0);
-                    emit boardChanged(); return;
-                }
-                // 炸弹+火箭
-                if ((isBomb(a) && isRocket(b)) || (isRocket(a) && isBomb(b))) {
-                    int rocketType = isRocket(a) ? (a==Rocket_UpDown?Rocket_UpDownType:Rocket_LeftRightType) : (b==Rocket_UpDown?Rocket_UpDownType:Rocket_LeftRightType);
-                    schedulePropEffect(r2, c2, Combo_BombRocketType, QString::number(rocketType), 0);
-                    emit boardChanged(); return;
-                }
-            } else {
-                // 单体道具
-                m_comboPending = true;
-                if (aNowIsProp && !bNowIsProp) {
-                    if (a == Rocket_UpDown) schedulePropEffect(r1, c1, Rocket_UpDownType, b, 0);
-                    else if (a == Rocket_LeftRight) schedulePropEffect(r1, c1, Rocket_LeftRightType, b, 0);
-                    else if (a == Bomb) schedulePropEffect(r1, c1, BombType, b, 0);
-                    else if (a == SuperItem) { if (!b.isEmpty()) schedulePropEffect(r1, c1, SuperItemType, b, 0); }
-                } else if (!aNowIsProp && bNowIsProp) {
-                    if (b == Rocket_UpDown) schedulePropEffect(r2, c2, Rocket_UpDownType, a, 0);
-                    else if (b == Rocket_LeftRight) schedulePropEffect(r2, c2, Rocket_LeftRightType, a, 0);
-                    else if (b == Bomb) schedulePropEffect(r2, c2, BombType, a, 0);
-                    else if (b == SuperItem) { if (!a.isEmpty()) schedulePropEffect(r2, c2, SuperItemType, a, 0); }
-                }
-            }
-        }
-
+    // 4) 无效交换：回滚且不扣步
+    m_comboCnt = 0;
+    if (!isRecursion) {
+        std::swap(m_board[r1][c1], m_board[r2][c2]);
+        emit rollbackSwap(r1, c1, r2, c2);
         emit boardChanged();
     }
 }
@@ -269,6 +215,13 @@ void GameBoard::schedulePropEffect(int row, int col, int type, const QString &co
 {
     qDebug() << "schedulePropEffect: scheduling" << type << "at" << QPoint(row,col) << "delayMs:" << delayMs << "color:" << color;
     QPoint pt(row, col);
+
+    // 若该点是组合参与者且 type 属于单体（1~4），则跳过，防止组合完成后再次单独激活
+    if (m_comboParticipants.contains(pt) && type >= 1 && type <= 4) {
+        qDebug() << "schedulePropEffect: skip single effect at combo participant" << pt << "type:" << type;
+        return;
+    }
+
     if (m_pendingActivations.contains(pt)) {
         qDebug() << "schedulePropEffect: already pending at" << pt << ", skip";
         return;
@@ -276,21 +229,10 @@ void GameBoard::schedulePropEffect(int row, int col, int type, const QString &co
     m_pendingActivations.insert(pt);
 
     QTimer::singleShot(delayMs, this, [this, row, col, type, color]() {
+        // 执行前先移除该点的 pending，防止残留导致后续阻塞
+        m_pendingActivations.remove(QPoint(row, col));
         qDebug() << "schedulePropEffect: executing (emit propEffect)" << type << "at" << QPoint(row,col) << "color:" << color;
-        // 不再在此处修改 m_comboPending，交由各效果触发完成时重置
-
-        // 组合道具
-        if (type == Combo_RocketRocketType) { emit propEffect(row, col, Combo_RocketRocketType, QString()); return; }
-        if (type == Combo_BombBombType)     { emit propEffect(row, col, Combo_BombBombType,     QString()); return; }
-        if (type == Combo_BombRocketType)   { emit propEffect(row, col, Combo_BombRocketType,   color);     return; }
-        if (type == Combo_SuperBombType)    { emit propEffect(row, col, Combo_SuperBombType,    QString()); return; }
-        if (type == Combo_SuperRocketType)  { emit propEffect(row, col, Combo_SuperRocketType,  QString()); return; }
-        if (type == Combo_SuperSuperType)   { emit propEffect(row, col, Combo_SuperSuperType,   QString()); return; }
-
-        // 普通道具
-        if (type == Rocket_UpDownType || type == Rocket_LeftRightType) { emit propEffect(row, col, type, QString()); return; }
-        if (type == BombType)                                            { emit propEffect(row, col, BombType, QString()); return; }
-        if (type == SuperItemType)                                       { emit propEffect(row, col, SuperItemType, color); return; }
+        emit propEffect(row, col, type, color);
     });
 }
 
@@ -338,6 +280,7 @@ void GameBoard::rocketEffectTriggered(int row, int col, int type)
     m_comboPending = false;
     // 确保清除延迟激活标记，避免重复调度阻塞
     m_pendingActivations.remove(QPoint(row, col));
+    m_comboParticipants.remove(QPoint(row, col));
 
     qDebug() << "rocketEffectTriggered: start" << QPoint(row,col) << "type" << type;
 
@@ -360,6 +303,9 @@ void GameBoard::rocketEffectTriggered(int row, int col, int type)
             if (r == row) continue; // FIX: 原为 (r == row && c == col)
             QString v = m_board[r][col];
             if (v.isEmpty()) continue;
+
+            // 若该位置处于待激活集合中，则跳过，避免组合后再次单体触发
+            if (m_pendingActivations.contains(QPoint(r, col))) continue;
 
             if (isBomb(v)) {
                 schedulePropEffect(r, col, BombType, QString(), 500);
@@ -386,6 +332,8 @@ void GameBoard::rocketEffectTriggered(int row, int col, int type)
             QString v = m_board[row][c];
             if (v.isEmpty()) continue;
 
+            if (m_pendingActivations.contains(QPoint(row, c))) continue;
+
             if (isBomb(v)) {
                 schedulePropEffect(row, c, BombType, QString(), 500);
             } else if (isRocket(v)) {
@@ -411,8 +359,8 @@ void GameBoard::rocketEffectTriggered(int row, int col, int type)
 void GameBoard::bombEffectTriggered(int row, int col) {
     // 重要：动画完成进入逻辑阶段，解除组合挂起状态
     m_comboPending = false;
-    // 确保清除延迟激活标记
     m_pendingActivations.remove(QPoint(row, col));
+    m_comboParticipants.remove(QPoint(row, col));
 
     int radius = 2;  // 半径为 2 的圆形区域（含中心）
 
@@ -532,6 +480,7 @@ bool GameBoard::isValidSwap(int r1, int c1, int r2, int c2) {
     return true;
 }
 
+// 判断是否是道具
 bool GameBoard::isProp(QString color)
 {
     if(color == Rocket_UpDown    ||
@@ -578,6 +527,8 @@ QVector<PropTypedef> GameBoard::findRocketMatches(int r1, int c1, int r2, int c2
                     qDebug() << QString("(%1, %2) 创建竖向火箭").arg(r).arg(c+1);
                     rocketMatches.append({Rocket_UpDownType, QPoint(r, c + 1)});
                 }
+                // qDebug() << QString("(%1, %2) 创建竖向火箭").arg(r+c2-c).arg(c);
+                // rocketMatches.append({Rocket_UpDownType, QPoint(r+c2-c, c)});
             }
         }
     }
@@ -815,28 +766,61 @@ QVector<QPoint> GameBoard::findMatches(int r1, int c1, int r2, int c2, bool argf
         // 优先查找五个（超级道具），避免五连同时生成其他道具
         findSuperItemMatches();
 
-        // 辅助：检查某点是否已被超级道具占用或属于五连匹配集合
-        auto isReservedBySuper = [this, &matchedSet](const QPoint &pt)->bool{
-            if (matchedSet.contains(pt)) return true; // 如果该点属于匹配集合（例如五连），则保留给超级道具
+        // 计算：所有被“五连”覆盖到的格子集合（用于彻底屏蔽同一条五连中产生的火箭）
+        QSet<QPoint> superCoveredCells;
+        for (const PropTypedef &sp : superItemMatches) {
+            int cr = sp.point.x();
+            int cc = sp.point.y();
+            if (cr < 0 || cr >= m_rows || cc < 0 || cc >= m_columns) continue;
+            QString color = m_board[cr][cc];
+            if (!isColor(color)) continue;
+            // 横向扩展
+            int left = cc, right = cc;
+            while (left-1 >= 0 && m_board[cr][left-1] == color) left--;
+            while (right+1 < m_columns && m_board[cr][right+1] == color) right++;
+            if (right - left + 1 >= 5) {
+                int start = cc - 2; if (start < left) start = left; if (start > right - 4) start = right - 4;
+                for (int c = start; c < start + 5; ++c) superCoveredCells.insert(QPoint(cr, c));
+            }
+            // 纵向扩展
+            int top = cr, bottom = cr;
+            while (top-1 >= 0 && m_board[top-1][cc] == color) top--;
+            while (bottom+1 < m_rows && m_board[bottom+1][cc] == color) bottom++;
+            if (bottom - top + 1 >= 5) {
+                int start = cr - 2; if (start < top) start = top; if (start > bottom - 4) start = bottom - 4;
+                for (int r = start; r < start + 5; ++r) superCoveredCells.insert(QPoint(r, cc));
+            }
+        }
+
+        // 辅助：检查某点是否已被超级道具占用（仅判断超级道具位置，避免误排除普通三/四消可生成道具的位置）
+        auto isReservedBySuper = [this](const QPoint &pt)->bool{
             for (const PropTypedef &p : superItemMatches) {
                 if (p.point == pt) return true;
             }
             return false;
         };
 
-        // 查找横向竖向火箭匹配，但跳过会与超级道具冲突的位置
-        // 修改 findRocketMatches：改为接受预检查 - 但为避免大改，这里调用后清洗 rocketMatches
+        // 查找横向竖向火箭匹配
         findRocketMatches(r1, c1, r2, c2);
-        if (!superItemMatches.isEmpty() && !rocketMatches.isEmpty()) {
+        if (!rocketMatches.isEmpty()) {
             QVector<PropTypedef> filtered;
             for (const PropTypedef &p : rocketMatches) {
-                if (!isReservedBySuper(p.point)) filtered.append(p);
-                else qDebug() << "findMatches: skip rocket at" << p.point << "due to superItem priority";
+                // 若火箭位置落在五连覆盖的任一格子上，则丢弃，避免与超级道具并存
+                if (superCoveredCells.contains(p.point)) {
+                    qDebug() << "findMatches: skip rocket at (covered by 5-in-a-row)" << p.point;
+                    continue;
+                }
+                // 同时避免与超级道具中心位置冲突
+                if (isReservedBySuper(p.point)) {
+                    qDebug() << "findMatches: skip rocket at" << p.point << "due to superItem priority";
+                    continue;
+                }
+                filtered.append(p);
             }
             rocketMatches = filtered;
         }
 
-        // 查找 T 字形和 L 字形的炸弹匹配，同样避免与超级道具冲突
+        // 查找 T/L 炸弹匹配，同样避免与超级道具冲突
         findBombMatches();
         if (!superItemMatches.isEmpty() && !bombMatches.isEmpty()) {
             QVector<PropTypedef> filtered2;
@@ -849,15 +833,13 @@ QVector<QPoint> GameBoard::findMatches(int r1, int c1, int r2, int c2, bool argf
 
         // 发射动画信号
         if (!rocketMatches.isEmpty()) {
-            emit rocketCreateRequested(rocketMatches); // 生成火箭动画
+            emit rocketCreateRequested(rocketMatches);
         }
-
         if (!bombMatches.isEmpty()) {
-            emit bombCreateRequested(bombMatches); // 生成炸弹动画
+            emit bombCreateRequested(bombMatches);
         }
-
         if (!superItemMatches.isEmpty()) {
-            emit superItemCreateRequested(superItemMatches); // 生成超级道具动画
+            emit superItemCreateRequested(superItemMatches);
         }
     }
     // 返回所有匹配的方块
@@ -984,6 +966,7 @@ void GameBoard::removeMatchedTiles(const QVector<QPoint> &matches) {
     updateScore(matches.size() * 10);
 }
 
+// 创建道具
 void GameBoard::creatProp()
 {
     // 创建火箭
@@ -1019,6 +1002,26 @@ bool GameBoard::isMovable(const QString &color) const {
 void GameBoard::updateScore(int points) {
     m_score += points;
     emit scoreChanged(m_score);
+}
+
+void GameBoard::updateStep(int step){
+    static bool isEnd = false;
+    if(step == -1){
+        if(m_step == 1){
+            m_step -= 1;
+            isEnd = true;
+        } else {
+            m_step -= 1;
+        }
+
+    } else {
+        m_step = step;
+    }
+    emit stepChanged(m_step);
+    if(isEnd){
+        isEnd = false;
+        emit gameOver();
+    }
 }
 
 Q_INVOKABLE void GameBoard::commitDrop()
@@ -1072,16 +1075,27 @@ bool GameBoard::isBomb(const QString &color) const {
 // 新增：两个火箭组合触发（在 QML 播放合成动画结束后调用）
 void GameBoard::rocketRocketTriggered(int row, int col)
 {
-    // 重要：动画完成进入逻辑阶段，解除组合挂起状态
+    // 组合开始时立即解除挂起并清空所有 pending，避免后续 finalizeSwap 阻塞
     m_comboPending = false;
-    m_pendingActivations.remove(QPoint(row, col));
+    m_pendingActivations.clear();
 
-    qDebug() << "rocketRocketTriggered: cross clear at" << QPoint(row, col);
+    // 先消耗两个参与点
+    for (const QPoint &p : m_comboParticipants) {
+        if (!m_board[p.x()][p.y()].isEmpty()) {
+            qDebug() << "rocketRocketTriggered: consume combo participant at" << p << "value=" << m_board[p.x()][p.y()];
+        }
+        m_board[p.x()][p.y()] = "";
+        m_pendingActivations.remove(p);
+    }
+
     QVector<QPoint> clearedNow;
-    // 清除整行并整列，遇到道具则调度激活
+    // 在 row, col 交叉清除
     for (int c = 0; c < m_columns; c++) {
+        QPoint pt(row, c);
+        if (pt == QPoint(row, col)) continue; // 跳过参与点
         QString v = m_board[row][c];
         if (v.isEmpty()) continue;
+        if (m_comboParticipants.contains(pt)) continue;
         if (isBomb(v)) {
             schedulePropEffect(row, c, BombType, QString(), 500);
         } else if (isRocket(v)) {
@@ -1096,8 +1110,11 @@ void GameBoard::rocketRocketTriggered(int row, int col)
         }
     }
     for (int r = 0; r < m_rows; r++) {
+        QPoint pt(r, col);
+        if (pt == QPoint(row, col)) continue; // 跳过参与点
         QString v = m_board[r][col];
         if (v.isEmpty()) continue;
+        if (m_comboParticipants.contains(pt)) continue;
         if (isBomb(v)) {
             schedulePropEffect(r, col, BombType, QString(), 500);
         } else if (isRocket(v)) {
@@ -1106,7 +1123,6 @@ void GameBoard::rocketRocketTriggered(int row, int col)
             QString chosen = chooseNearbyColor(r, col);
             schedulePropEffect(r, col, SuperItemType, chosen, 500);
         } else {
-            // 中心可能重复，避免重复计入
             if (r != row) clearedNow.append(QPoint(r, col));
             m_board[r][col] = "";
             m_pendingActivations.remove(QPoint(r, col));
@@ -1116,78 +1132,117 @@ void GameBoard::rocketRocketTriggered(int row, int col)
     updateScore(clearedNow.size() * 10);
     emit boardChanged();
     processDrop();
+    clearComboParticipants();
 }
 
 // 新增：两个炸弹组合触发（更大半径爆炸）
 void GameBoard::bombBombTriggered(int row, int col)
 {
-    // 重要：动画完成进入逻辑阶段，解除组合挂起状态
     m_comboPending = false;
-    m_pendingActivations.remove(QPoint(row, col));
+    m_pendingActivations.clear();
 
-    int radius = 4; // 半径为4
+    // 先消耗两个参与点
+    for (const QPoint &p : m_comboParticipants) {
+        if (!m_board[p.x()][p.y()].isEmpty()) {
+            qDebug() << "bombBombTriggered: consume combo participant at" << p << "value=" << m_board[p.x()][p.y()];
+        }
+        m_board[p.x()][p.y()] = "";
+        m_pendingActivations.remove(p);
+    }
+
+    int radius = 4;
     QVector<QPoint> expected;
     QVector<QPoint> clearedNow;
-    for (int r = row - radius; r <= row + radius; r++) {
-        for (int c = col - radius; c <= col + radius; c++) {
-            if (r >= 0 && r < m_rows && c >= 0 && c < m_columns) {
-                int dr = r - row;
-                int dc = c - col;
-                if (dr*dr + dc*dc <= radius*radius) {
-                    expected.append(QPoint(r,c));
-                    QString v = m_board[r][c];
-                    if (v.isEmpty()) continue;
 
-                    if (isBomb(v)) {
-                        schedulePropEffect(r, c, BombType, QString(), 500);
-                    } else if (isRocket(v)) {
-                        schedulePropEffect(r, c, (v==Rocket_UpDown?Rocket_UpDownType:Rocket_LeftRightType), QString(), 500);
-                    } else if (v == SuperItem) {
-                        QString chosen = chooseNearbyColor(r, c);
-                        schedulePropEffect(r, c, SuperItemType, chosen, 500);
-                    } else {
-                        clearedNow.append(QPoint(r,c));
-                        m_board[r][c] = "";
-                        m_pendingActivations.remove(QPoint(r,c));
-                    }
-                }
+    // 同样先消耗触发炸弹本体，避免重复激活
+    if (row >= 0 && row < m_rows && col >= 0 && col < m_columns) {
+        if (!m_board[row][col].isEmpty()) {
+            qDebug() << "bombBombTriggered: consume activator at" << QPoint(row,col) << "value=" << m_board[row][col];
+        }
+        m_board[row][col] = "";
+        m_pendingActivations.remove(QPoint(row,col));
+    }
+
+    // 先计算期望清除的格子（基于整数平方距离），用于对比调试
+    for (int r = row - radius; r <= row + radius; ++r) {
+        for (int c = col - radius; c <= col + radius; ++c) {
+            if (r >= 0 && r < m_rows && c >= 0 && c < m_columns) {
+                int dr = r - row, dc = c - col;
+                if (dr*dr + dc*dc <= radius*radius) expected.append(QPoint(r,c));
             }
         }
     }
-    // 计算未被清除但应被清除的位置，用于调试
+
+    // 清除圆形范围内的方块（使用整数判断）
+    for (const QPoint &pt : expected) {
+        int r = pt.x();
+        int c = pt.y();
+        // 跳过触发来源自身位置（该炸弹自身已被清空）
+        if (r == row && c == col) continue;
+
+        QString v = m_board[r][c];
+        if (v.isEmpty()) continue;
+
+        // 如果是道具，调度其激活（不立即清空）
+        if (isBomb(v)) {
+            schedulePropEffect(r, c, BombType, QString(), 500);
+        } else if (isRocket(v)) {
+            int rocketType = (v == Rocket_UpDown) ? Rocket_UpDownType : Rocket_LeftRightType;
+            schedulePropEffect(r, c, rocketType, QString(), 500);
+        } else if (v == SuperItem) {
+            QString choose = chooseNearbyColor(r, c);
+            schedulePropEffect(r, c, SuperItemType, choose, 500);
+        } else {
+            m_board[r][c] = "";
+            clearedNow.append(pt);
+        }
+    }
+
+    // 记录未被清除但应被清除的位置（理论上应该为空）
     QVector<QPoint> missed;
     for (const QPoint &pt : expected) {
         if (!m_board[pt.x()][pt.y()].isEmpty()) {
             missed.append(pt);
         }
     }
-    qDebug() << "bombEffectTriggered: big bomb at" << QPoint(row,col) << "expected cells:" << expected.size() << "clearedNow:" << clearedNow.size() << "missed:" << missed;
+
+    qDebug() << "bombBombTriggered: bomb at" << QPoint(row,col) << "expected cells:" << expected.size() << "clearedNow:" << clearedNow.size() << "missed:" << missed;
     if (!missed.isEmpty()) {
-        qDebug() << "bombEffectTriggered: missed positions (should be empty):" << missed;
+        qDebug() << "bombBombTriggered: missed positions (should be empty):" << missed;
     }
 
     updateScore(clearedNow.size() * 10);
-
-    emit boardChanged();  // 发出更新棋盘信号
+    emit boardChanged();
     processDrop();
+    clearComboParticipants();
 }
 
 // 新增：炸弹与火箭组合触发
 void GameBoard::bombRocketTriggered(int row, int col, int rocketType)
 {
-    // 重要：动画完成进入逻辑阶段，解除组合挂起状态
     m_comboPending = false;
-    m_pendingActivations.remove(QPoint(row, col));
+    m_pendingActivations.clear();
+
+    // 先消耗两个参与点
+    for (const QPoint &p : m_comboParticipants) {
+        if (!m_board[p.x()][p.y()].isEmpty()) {
+            qDebug() << "bombRocketTriggered: consume combo participant at" << p << "value=" << m_board[p.x()][p.y()];
+        }
+        m_board[p.x()][p.y()] = "";
+        m_pendingActivations.remove(p);
+    }
 
     QVector<QPoint> clearedNow;
     if (rocketType == Rocket_UpDownType) {
-        // 清除以 col 为中心的三列
         for (int dc = -1; dc <= 1; ++dc) {
             int cc = col + dc;
             if (cc < 0 || cc >= m_columns) continue;
             for (int r = 0; r < m_rows; ++r) {
+                QPoint pt(r, cc);
+                if (pt == QPoint(row, col)) continue; // 跳过参与点
                 QString v = m_board[r][cc];
                 if (v.isEmpty()) continue;
+                if (m_comboParticipants.contains(pt)) continue; // 跳过最近组合参与集合
 
                 if (isBomb(v)) {
                     schedulePropEffect(r, cc, BombType, QString(), 500);
@@ -1205,13 +1260,15 @@ void GameBoard::bombRocketTriggered(int row, int col, int rocketType)
         }
         qDebug() << "bombRocketTriggered: rocket(vertical) + bomb at" << QPoint(row,col) << "cleared cols" << col-1 << col << col+1 << "=> total:" << clearedNow.size();
     } else if (rocketType == Rocket_LeftRightType) {
-        // 清除以 row 为中心的三行
         for (int dr = -1; dr <= 1; ++dr) {
             int rr = row + dr;
             if (rr < 0 || rr >= m_rows) continue;
             for (int c = 0; c < m_columns; ++c) {
+                QPoint pt(rr, c);
+                if (pt == QPoint(row, col)) continue; // 跳过参与点
                 QString v = m_board[rr][c];
                 if (v.isEmpty()) continue;
+                if (m_comboParticipants.contains(pt)) continue; // 跳过最近组合参与集合
 
                 if (isBomb(v)) {
                     schedulePropEffect(rr, c, BombType, QString(), 500);
@@ -1228,14 +1285,63 @@ void GameBoard::bombRocketTriggered(int row, int col, int rocketType)
             }
         }
         qDebug() << "bombRocketTriggered: rocket(horizontal) + bomb at" << QPoint(row,col) << "cleared rows" << row-1 << row << row+1 << "=> total:" << clearedNow.size();
-    } else {
-        qDebug() << "bombRocketTriggered: unknown rocketType" << rocketType << "at" << QPoint(row,col);
     }
 
     updateScore(clearedNow.size() * 10);
     emit boardChanged();
     processDrop();
+    clearComboParticipants();
 }
+
+// 新增：超级道具 + 火箭 组合触发
+void GameBoard::superRocketTriggered(int row, int col)
+{
+    // 重要：动画完成进入逻辑阶段，解除组合挂起状态
+    m_comboPending = false;
+    m_pendingActivations.remove(QPoint(row, col));
+    clearComboParticipants();
+
+    qDebug() << "superRocketTriggered: at" << QPoint(row,col);
+    QString chosen = chooseNearbyColor(row, col);
+    if (chosen.isEmpty()) {
+        qDebug() << "superRocketTriggered: no color chosen, abort";
+        return;
+    }
+
+    QVector<QPoint> converted;
+    // 将场上所有该颜色格子替换为随机方向的火箭
+    for (int r = 0; r < m_rows; ++r) {
+        for (int c = 0; c < m_columns; ++c) {
+            if (m_board[r][c] == chosen) {
+                // 随机选择竖向或横向火箭
+                bool vertical = QRandomGenerator::global()->bounded(2) == 0;
+                m_board[r][c] = vertical ? Rocket_UpDown : Rocket_LeftRight;
+                converted.append(QPoint(r,c));
+                m_pendingActivations.remove(QPoint(r,c));
+            }
+        }
+    }
+
+    // 清除超级道具自身位置
+    if (row >= 0 && row < m_rows && col >= 0 && col < m_columns) {
+        m_board[row][col] = "";
+        m_pendingActivations.remove(QPoint(row,col));
+    }
+
+    qDebug() << "superRocketTriggered: chosen color" << chosen << "converted to rockets:" << converted.size();
+    emit boardChanged();
+
+    // 激活所有新火箭（延迟以便前端显示）
+    for (const QPoint &pt : converted) {
+        QString v = m_board[pt.x()][pt.y()];
+        int type = (v == Rocket_UpDown) ? Rocket_UpDownType : Rocket_LeftRightType;
+        schedulePropEffect(pt.x(), pt.y(), type, QString(), 500);
+    }
+
+    // 计分
+    updateScore(converted.size() * 10);
+}
+
 
 // 新增：超级道具 + 炸弹 组合触发
 void GameBoard::superBombTriggered(int row, int col)
@@ -1243,6 +1349,7 @@ void GameBoard::superBombTriggered(int row, int col)
     // 重要：动画完成进入逻辑阶段，解除组合挂起状态
     m_comboPending = false;
     m_pendingActivations.remove(QPoint(row, col));
+    clearComboParticipants();
 
     qDebug() << "superBombTriggered: at" << QPoint(row,col);
     // 从超级道具位置的四邻中选择一个颜色
@@ -1283,52 +1390,29 @@ void GameBoard::superBombTriggered(int row, int col)
     updateScore(converted.size() * 10);
 }
 
-// 新增：超级道具 + 火箭 组合触发
-void GameBoard::superRocketTriggered(int row, int col)
+// 新增：超级道具合成触发（占位符，实际逻辑已在其他地方实现）
+Q_INVOKABLE void GameBoard::superSuperTriggered(int row, int col)
 {
     // 重要：动画完成进入逻辑阶段，解除组合挂起状态
     m_comboPending = false;
-    m_pendingActivations.remove(QPoint(row, col));
+    // 保障存在于链接单元的最小实现，实际逻辑已在另一处完善
 
-    qDebug() << "superRocketTriggered: at" << QPoint(row,col);
-    QString chosen = chooseNearbyColor(row, col);
-    if (chosen.isEmpty()) {
-        qDebug() << "superRocketTriggered: no color chosen, abort";
-        return;
-    }
-
-    QVector<QPoint> converted;
-    // 将场上所有该颜色格子替换为随机方向的火箭
+    qDebug() << "superSuperTriggered (stub): at" << QPoint(row, col);
+    QVector<QPoint> clearedNow;
     for (int r = 0; r < m_rows; ++r) {
         for (int c = 0; c < m_columns; ++c) {
-            if (m_board[r][c] == chosen) {
-                // 随机选择竖向或横向火箭
-                bool vertical = QRandomGenerator::global()->bounded(2) == 0;
-                m_board[r][c] = vertical ? Rocket_UpDown : Rocket_LeftRight;
-                converted.append(QPoint(r,c));
-                m_pendingActivations.remove(QPoint(r,c));
+            if (!m_board[r][c].isEmpty()) {
+                m_board[r][c].clear();
+                clearedNow.append(QPoint(r,c));
             }
         }
     }
 
-    // 清除超级道具自身位置
-    if (row >= 0 && row < m_rows && col >= 0 && col < m_columns) {
-        m_board[row][col] = "";
-        m_pendingActivations.remove(QPoint(row,col));
-    }
-
-    qDebug() << "superRocketTriggered: chosen color" << chosen << "converted to rockets:" << converted.size();
+    updateScore(clearedNow.size() * 10);
     emit boardChanged();
-
-    // 激活所有新火箭（延迟以便前端显示）
-    for (const QPoint &pt : converted) {
-        QString v = m_board[pt.x()][pt.y()];
-        int type = (v == Rocket_UpDown) ? Rocket_UpDownType : Rocket_LeftRightType;
-        schedulePropEffect(pt.x(), pt.y(), type, QString(), 500);
-    }
-
-    updateScore(converted.size() * 10);
+    processDrop();
 }
+
 
 Q_INVOKABLE void GameBoard::processDrop()
 {
@@ -1444,9 +1528,11 @@ void GameBoard::startGame()
 void GameBoard::resetGame()
 {
     qDebug() << "resetGame";
+    m_step = m_init_step;
     m_score = 0;
     m_comboCnt = 0;
     emit scoreChanged(m_score);
+    emit stepChanged(m_step);
     initializeBoard();
 }
 
@@ -1497,24 +1583,4 @@ void GameBoard::shuffleBoard()
     emit boardChanged();
 }
 
-// 新增：超级道具合成触发（占位符，实际逻辑已在其他地方实现）
-Q_INVOKABLE void GameBoard::superSuperTriggered(int row, int col)
-{
-    // 重要：动画完成进入逻辑阶段，解除组合挂起状态
-    m_comboPending = false;
-    // 保障存在于链接单元的最小实现，实际逻辑已在另一处完善
-    qDebug() << "superSuperTriggered (stub): at" << QPoint(row, col);
-    QVector<QPoint> clearedNow;
-    for (int r = 0; r < m_rows; ++r) {
-        for (int c = 0; c < m_columns; ++c) {
-            if (!m_board[r][c].isEmpty()) {
-                m_board[r][c].clear();
-                clearedNow.append(QPoint(r,c));
-            }
-        }
-    }
-    updateScore(clearedNow.size() * 10);
-    emit boardChanged();
-    processDrop();
-}
 

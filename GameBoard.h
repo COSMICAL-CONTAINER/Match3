@@ -38,6 +38,8 @@ class GameBoard : public QObject
     Q_PROPERTY(int rows READ rows CONSTANT)
     Q_PROPERTY(int columns READ columns CONSTANT)
     Q_PROPERTY(int score READ score NOTIFY scoreChanged)
+    Q_PROPERTY(int step READ step NOTIFY stepChanged)
+    Q_PROPERTY(int init_step READ init_step WRITE setInitStep NOTIFY init_stepChanged) // 将 init_step 设为可写
     Q_PROPERTY(int comboCount READ comboCount NOTIFY comboChanged)
 
 public:
@@ -72,11 +74,18 @@ public:
     int rows() const { return m_rows; }
     int columns() const { return m_columns; }
     int score() const { return m_score; }
+    int step() const { return m_step;}
+    int init_step() const { return m_init_step;}
     int comboCount() const { return m_comboCnt; }
+
+    // 新增：setter 供 QML 写入
+    void setInitStep(int v) { m_init_step = v; emit init_stepChanged(m_init_step); }
 
 signals:
     void boardChanged();
     void scoreChanged(int newScore);
+    void stepChanged(int step);
+    void init_stepChanged(int init_step);
     void comboChanged(int comboCount);  // 发送连击数
 
     // 基础动画信号
@@ -97,10 +106,12 @@ signals:
     void propEffect(int row, int col, int type, QString color);
 
 private:
+    int m_init_step = 25;
     int m_comboCnt;
     int m_rows;
     int m_columns;
     int m_score;
+    int m_step;
     bool m_comboPending; // 防止组合触发期间重复处理
     QVector<QVector<QString>> m_board;
     QVector<QString> m_availableColors;
@@ -108,6 +119,9 @@ private:
     QVector<PropTypedef> bombMatches;     // 用于记录炸弹匹配
     QVector<PropTypedef> superItemMatches; // 用于记录超级道具匹配
     QSet<QPoint> m_pendingActivations; // 记录已调度但尚未执行的道具激活位置
+
+    // 新增：记录最近一次组合参与的两个位置，避免组合后再次单体激活
+    QSet<QPoint> m_comboParticipants;
 
     // 延迟激活动作：用于在 4 连/5 连先生成新道具后，再激活旧道具
     struct DeferredActivation {
@@ -129,8 +143,8 @@ private:
     void applyGravity();
     QString getRandomColor() const;
     void updateScore(int points);
+    void updateStep(int step);
 
-    // 新增私有方法
     QVector<PropTypedef> findBombMatches();
     QVector<PropTypedef> findRocketMatches(int r1, int c1, int r2, int c2);
     QVector<PropTypedef> findSuperItemMatches();
@@ -149,6 +163,14 @@ private:
 
     // 新增：道具激活后检查并处理新三消
     void checkAndProcessNewMatches();
+
+    // 新增：组合参与点的标记清理
+    inline void markComboParticipants(int r1, int c1, int r2, int c2) {
+        m_comboParticipants.insert(QPoint(r1, c1));
+        m_comboParticipants.insert(QPoint(r2, c2));
+    }
+    inline void clearComboParticipants() { m_comboParticipants.clear(); }
+
 };
 
 #endif // GAMEBOARD_H
