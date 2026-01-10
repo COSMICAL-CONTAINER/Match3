@@ -12,6 +12,168 @@ ApplicationWindow {
     height: 600
     title: "开心消消乐"
 
+    // 开场动画：提供启动接口
+    function startIntro() {
+        introOverlay.start();
+    }
+    // 进入地图后的入场动画（步数板与叶子）
+    function startEntranceAnimations() {
+        // 工具：在运行时创建并启动属性动画
+        function animateProperty(targetObj, prop, fromVal, toVal, durationMs) {
+            var anim = Qt.createQmlObject(
+                'import QtQuick 2.15; NumberAnimation { property: "' + prop + '"; from: ' + fromVal + '; to: ' + toVal + '; duration: ' + durationMs + '; easing.type: Easing.OutCubic }',
+                targetObj);
+            anim.target = targetObj;
+            anim.start();
+        }
+
+        // step 自上而下滑入
+        step.y = -100; // 初始在上方
+        animateProperty(step, "y", step.y, -10, 500);
+
+        // 叶子1-4 从顶部滑入
+        leaf1.y = -80; animateProperty(leaf1, "y", leaf1.y, -10, 450);
+        leaf2.y = -60; animateProperty(leaf2, "y", leaf2.y, 10, 480);
+        leaf3.y = -90; animateProperty(leaf3, "y", leaf3.y, -10, 520);
+        leaf4.y = -70; animateProperty(leaf4, "y", leaf4.y, -7, 500);
+
+        // 叶子5 从右侧滑入：动画作用在 offsetX，保持 x 绑定不破坏，宽度变化时仍贴右
+        leaf5.offsetX = 200; // 初始右侧偏移，使其在屏幕外
+        animateProperty(leaf5, "offsetX", leaf5.offsetX, 0, 500);
+    }
+
+    // 开场动画遮罩层（最高层）
+    Item {
+        id: introOverlay
+        anchors.fill: parent
+        visible: false
+        z: 9999
+        property int currentIndex: 0
+        property int autoMs: 4000
+        // 新增：避免重复连接导致多次递增
+        property bool advanceRequested: false
+
+        // 图片资源序列
+        property var frames: [
+            "qrc:/image/ui/made.png",
+            "qrc:/image/ui/backgroundstory1.png",
+            "qrc:/image/ui/backgroundstory2.png",
+            "qrc:/image/ui/backgroundstory3.jpg"
+        ]
+
+        // 背景：纯黑，遮住背后所有界面
+        Rectangle {
+            anchors.fill: parent
+            color: "black"
+        }
+
+        // 当前图片
+        Image {
+            id: introImage
+            anchors.fill: parent
+            source: introOverlay.frames[introOverlay.currentIndex]
+            smooth: true
+            fillMode: Image.PreserveAspectFit
+            cache: true
+            opacity: 0
+        }
+
+        // 淡入淡出
+        SequentialAnimation {
+            id: fadeInAnim
+            running: false
+            NumberAnimation { target: introImage; property: "opacity"; from: 0; to: 1; duration: 300; easing.type: Easing.OutCubic }
+        }
+        SequentialAnimation {
+            id: fadeOutAnim
+            running: false
+            NumberAnimation { target: introImage; property: "opacity"; from: 1; to: 0; duration: 250; easing.type: Easing.InCubic }
+            // 统一在这里完成切换或结束逻辑，避免重复连接
+            onStopped: {
+                if (!introOverlay.advanceRequested)
+                    return;
+                introOverlay.advanceRequested = false;
+                if (introOverlay.currentIndex < introOverlay.frames.length - 1) {
+                    introOverlay.currentIndex += 1;
+                    introImage.source = introOverlay.frames[introOverlay.currentIndex];
+                    fadeInAnim.start();
+                    autoNextTimer.restart();
+                } else {
+                    introOverlay.visible = false;
+                    mainWindow.startEntranceAnimations();
+                }
+            }
+        }
+
+        // 自动前进计时器
+        Timer {
+            id: autoNextTimer
+            interval: introOverlay.autoMs
+            repeat: false
+            running: false
+            onTriggered: introOverlay.next()
+        }
+
+        // 点击跳过或前进
+        MouseArea {
+            anchors.fill: parent
+            onClicked: introOverlay.next()
+        }
+
+        // 右上角：跳过按钮（置于最上层）
+        Image {
+            id: skipBtn
+            source: "qrc:/image/ui/skip.png"
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.topMargin: 12
+            anchors.rightMargin: 12
+            width: 48; height: 48
+            fillMode: Image.PreserveAspectFit
+            z: 10000
+            visible: true
+            smooth: true
+            // 新增：悬停放大效果
+            scale: 1.0
+            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                onEntered: skipBtn.scale = 1.25
+                onExited: skipBtn.scale = 1.0
+                onClicked: {
+                    // 立即跳过所有开场动画
+                    autoNextTimer.stop();
+                    introOverlay.advanceRequested = false;
+                    introOverlay.visible = false;
+                    mainWindow.startEntranceAnimations();
+                }
+            }
+        }
+
+        // 控制逻辑
+        function start() {
+            currentIndex = 0;
+            advanceRequested = false;
+            visible = true;
+            introImage.opacity = 0;
+            introImage.source = frames[currentIndex];
+            fadeInAnim.start();
+            autoNextTimer.restart();
+        }
+        function next() {
+            autoNextTimer.stop();
+            advanceRequested = true;
+            fadeOutAnim.start();
+        }
+    }
+
+    Component.onCompleted: {
+        startIntro();
+        // 启动背景音乐
+        if (bgmPlayer) bgmPlayer.play();
+    }
+
     property int cellSize: Math.min(width, height * 0.7) / 8
 
     // 使用正确的上下文属性名
