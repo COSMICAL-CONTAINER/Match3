@@ -41,6 +41,7 @@ class GameBoard : public QObject
     Q_PROPERTY(int step READ step NOTIFY stepChanged)
     Q_PROPERTY(int init_step READ init_step WRITE setInitStep NOTIFY init_stepChanged) // 将 init_step 设为可写
     Q_PROPERTY(int comboCount READ comboCount NOTIFY comboChanged)
+    Q_PROPERTY(QVariantList stats READ stats NOTIFY statsChanged)
 
 public:
     explicit GameBoard(QObject *parent = nullptr, int rows = 8, int columns = 8);
@@ -71,6 +72,15 @@ public:
     Q_INVOKABLE void superRocketTriggered(int row, int col);
     Q_INVOKABLE void superSuperTriggered(int row, int col); // 超级+超级触发
 
+    // 统计接口：返回 15 项统计（六色 + 三普通道具触发 + 六组合道具触发）
+    Q_INVOKABLE int statAt(int n) const { return (n>=0 && n<15) ? m_stats[n] : 0; }
+    Q_INVOKABLE void addStatAt(int n) { if (n>=0 && n<15) { m_stats[n]++; emit statsChanged(stats()); } }
+    QVariantList stats() const {
+        QVariantList list; list.reserve(15);
+        for (int i=0;i<15;++i) list.append(m_stats[i]);
+        return list;
+    }
+
     int rows() const { return m_rows; }
     int columns() const { return m_columns; }
     int score() const { return m_score; }
@@ -78,7 +88,6 @@ public:
     int init_step() const { return m_init_step;}
     int comboCount() const { return m_comboCnt; }
 
-    // 新增：setter 供 QML 写入
     void setInitStep(int v) { m_init_step = v; emit init_stepChanged(m_init_step); }
 
 signals:
@@ -87,6 +96,8 @@ signals:
     void stepChanged(int step);
     void init_stepChanged(int init_step);
     void comboChanged(int comboCount);  // 发送连击数
+    // 新增：统计变化通知
+    void statsChanged(const QVariantList &stats);
 
     // 基础动画信号
     void swapAnimationRequested(int r1, int c1, int r2, int c2);
@@ -131,6 +142,19 @@ private:
         QString color;
         bool valid = false;
     } m_deferredActivation;
+
+    // 新增：统计数组
+    // 0-5= 颜色
+    // 6  = 火箭触发
+    // 7  = 炸弹触发
+    // 8  = 超级触发
+    // 9  = 火箭+火箭
+    // 10 = 炸弹+炸弹
+    // 11 = 炸弹+火箭
+    // 12 = 超级触发+火箭
+    // 13 = 超级触发+炸弹
+    // 14 = 超级触发+超级触发
+    int m_stats[15] = {0};
 
     void initializeBoard();
     void fillNewTiles();

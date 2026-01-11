@@ -1134,4 +1134,230 @@ ApplicationWindow {
 
     }
 
+    // 结束画面覆盖层
+    Item {
+        id: gameOverOverlay
+        anchors.fill: parent
+        visible: false
+        z: 9998
+        property bool _pendingRestart: false
+
+        // 背景半透明灰色
+        Rectangle {
+            anchors.fill: parent
+            color: "#88000000"
+            visible: true
+        }
+
+        // 拦截所有输入，避免底层被操作
+        MouseArea {
+            id: overlayBlocker
+            anchors.fill: parent
+            hoverEnabled: true
+            propagateComposedEvents: false
+            enabled: true
+            onPressed: function(){}
+            onWheel: function(){}
+            onReleased: function(){}
+        }
+
+        // 容器（用于整体上下滑动动画）
+        Item {
+            id: gameOverPanel
+            width: 500
+            height: 500
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: -height
+
+            Image {
+                anchors.fill: parent
+                source: "qrc:/image/ui/gameover.png"
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+            }
+
+            // 分数显示（置顶，居中加大字号）
+            Rectangle {
+                id: scoreHeader
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.top
+                anchors.topMargin: 60
+                width: parent.width
+                height: 80
+                color: "transparent"
+                Text {
+                    anchors.centerIn: parent
+                    text: "初始步数：" + (mainWindow.gameBoard && mainWindow.gameBoard.init_step !== undefined ? mainWindow.gameBoard.init_step : 0) +
+                          "\n最终得分：" + (mainWindow.gameBoard ? mainWindow.gameBoard.score : 0)
+                    font.pixelSize: 28
+                    font.bold: true
+                    color: "#ffffff"
+                    // 黑色描边
+                    style: Text.Outline
+                    styleColor: "black"
+                    horizontalAlignment: Text.AlignHCenter
+                }
+            }
+
+            // 统计展示区域（放在分数显示下面）
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: scoreHeader.bottom
+                anchors.topMargin: 40
+                spacing: 30
+
+                // 左列：六种颜色
+                Column {
+                    spacing: 8
+                    Repeater {
+                        model: ["red","green","blue","yellow","purple","brown"]
+                        Row {
+                            spacing: 6
+                            Image { source: "qrc:/image/item/" + modelData + ".png"; width: 28; height: 28; fillMode: Image.PreserveAspectFit }
+                            Text {
+                                // 改为绑定 stats 数组（索引与六色顺序一致）
+                                text: "× " + (mainWindow.gameBoard && mainWindow.gameBoard.stats ? mainWindow.gameBoard.stats[index] : 0)
+                                color: "#ffffff"; font.pixelSize: 16; style: Text.Outline; styleColor: "black"
+                            }
+                        }
+                    }
+                }
+
+                // 中列：三种普通道具
+                Column {
+                    spacing: 8
+                    Row {
+                        spacing: 6
+                        AnimatedImage { source: "qrc:/image/item/Rocket_1.gif"; width: 28; height: 28; playing: true; cache: false; fillMode: Image.PreserveAspectFit; smooth: true }
+                        Text { text: "× " + (mainWindow.gameBoard && mainWindow.gameBoard.stats ? mainWindow.gameBoard.stats[6] : 0); color: "#ffffff"; font.pixelSize: 16; style: Text.Outline; styleColor: "black" }
+                    }
+                    Row {
+                        spacing: 6
+                        Image { source: "qrc:/image/item/Bomb.png"; width: 28; height: 28; fillMode: Image.PreserveAspectFit }
+                        Text { text: "× " + (mainWindow.gameBoard && mainWindow.gameBoard.stats ? mainWindow.gameBoard.stats[7] : 0); color: "#ffffff"; font.pixelSize: 16; style: Text.Outline; styleColor: "black" }
+                    }
+                    Row {
+                        spacing: 6
+                        Image { source: "qrc:/image/item/SuperItem.png"; width: 28; height: 28; fillMode: Image.PreserveAspectFit }
+                        Text { text: "× " + (mainWindow.gameBoard && mainWindow.gameBoard.stats ? mainWindow.gameBoard.stats[8] : 0); color: "#ffffff"; font.pixelSize: 16; style: Text.Outline; styleColor: "black" }
+                    }
+                }
+                // 右列 所有组合道具
+                Column {
+                    spacing: 8
+                    Row {
+                        spacing: 6
+                        AnimatedImage { source: "qrc:/image/item/Rocket_1.gif"; width: 24; height: 24; playing: true; cache: false; fillMode: Image.PreserveAspectFit; smooth: true }
+                        AnimatedImage { source: "qrc:/image/item/Rocket_2.gif"; width: 24; height: 24; playing: true; cache: false; fillMode: Image.PreserveAspectFit; smooth: true }
+                        Text { text: "× " + (mainWindow.gameBoard && mainWindow.gameBoard.stats ? mainWindow.gameBoard.stats[9] : 0); color: "#ffffff"; font.pixelSize: 16; style: Text.Outline; styleColor: "black" }
+                    }
+                    Row {
+                        spacing: 6
+                        Image { source: "qrc:/image/item/Bomb.png"; width: 24; height: 24; fillMode: Image.PreserveAspectFit }
+                        Image { source: "qrc:/image/item/Bomb.png"; width: 24; height: 24; fillMode: Image.PreserveAspectFit }
+                        Text { text: "× " + (mainWindow.gameBoard && mainWindow.gameBoard.stats ? mainWindow.gameBoard.stats[10] : 0); color: "#ffffff"; font.pixelSize: 16; style: Text.Outline; styleColor: "black" }
+                    }
+                    Row {
+                        spacing: 6
+                        Image { source: "qrc:/image/item/Bomb.png"; width: 24; height: 24; fillMode: Image.PreserveAspectFit }
+                        AnimatedImage { source: "qrc:/image/item/Rocket_1.gif"; width: 24; height: 24; playing: true; cache: false; fillMode: Image.PreserveAspectFit; smooth: true }
+                        Text { text: "× " + (mainWindow.gameBoard && mainWindow.gameBoard.stats ? mainWindow.gameBoard.stats[11] : 0); color: "#ffffff"; font.pixelSize: 16; style: Text.Outline; styleColor: "black" }
+                    }
+                    Row {
+                        spacing: 6
+                        Image { source: "qrc:/image/item/SuperItem.png"; width: 28; height: 28; fillMode: Image.PreserveAspectFit }
+                        AnimatedImage { source: "qrc:/image/item/Rocket_1.gif"; width: 24; height: 24; playing: true; cache: false; fillMode: Image.PreserveAspectFit; smooth: true }
+                        Text { text: "× " + (mainWindow.gameBoard && mainWindow.gameBoard.stats ? mainWindow.gameBoard.stats[12] : 0); color: "#ffffff"; font.pixelSize: 16; style: Text.Outline; styleColor: "black" }
+                    }
+                    Row {
+                        spacing: 6
+                        Image { source: "qrc:/image/item/SuperItem.png"; width: 28; height: 28; fillMode: Image.PreserveAspectFit }
+                        Image { source: "qrc:/image/item/Bomb.png"; width: 24; height: 24; fillMode: Image.PreserveAspectFit }
+                        Text { text: "× " + (mainWindow.gameBoard && mainWindow.gameBoard.stats ? mainWindow.gameBoard.stats[13] : 0); color: "#ffffff"; font.pixelSize: 16; style: Text.Outline; styleColor: "black" }
+                    }
+                    Row {
+                        spacing: 6
+                        Image { source: "qrc:/image/item/SuperItem.png"; width: 28; height: 28; fillMode: Image.PreserveAspectFit }
+                        Image { source: "qrc:/image/item/SuperItem.png"; width: 28; height: 28; fillMode: Image.PreserveAspectFit }
+                        Text { text: "× " + (mainWindow.gameBoard && mainWindow.gameBoard.stats ? mainWindow.gameBoard.stats[14] : 0); color: "#ffffff"; font.pixelSize: 16; style: Text.Outline; styleColor: "black" }
+                    }
+                }
+            }
+
+            // 按钮区域
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 28
+                spacing: 24
+
+                Rectangle {
+                    id: btnRestart
+                    width: 160; height: 44
+                    radius: 8
+                    color: "#ff6b6b"
+                    Text { anchors.centerIn: parent; text: "重新开始"; color: "white"; font.pixelSize: 18 }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            gameOverOverlay._pendingRestart = true;
+                            gameOverOverlay.exitGameOver();
+                        }
+                    }
+                }
+                Rectangle {
+                    id: btnFree
+                    width: 160; height: 44
+                    radius: 8
+                    color: "#4dabf7"
+                    Text { anchors.centerIn: parent; text: "自由游戏"; color: "white"; font.pixelSize: 18 }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            gameOverOverlay._pendingRestart = false;
+                            gameOverOverlay.exitGameOver();
+                        }
+                    }
+                }
+            }
+        }
+
+        function showGameOver() {
+            visible = true;
+            overlayBlocker.enabled = true;
+            gameOverPanel.y = -gameOverPanel.height;
+            var targetY = (mainWindow.height - gameOverPanel.height) / 2;
+            var anim = Qt.createQmlObject('import QtQuick 2.15; NumberAnimation { property: "y"; duration: 450; easing.type: Easing.OutCubic }', gameOverPanel);
+            anim.from = gameOverPanel.y;
+            anim.to = targetY;
+            anim.target = gameOverPanel;
+            anim.running = true;
+        }
+        function exitGameOver() {
+            var fromY = gameOverPanel.y;
+            var toY = -gameOverPanel.height - 100;
+            var anim = Qt.createQmlObject('import QtQuick 2.15; NumberAnimation { property: "y"; duration: 380; easing.type: Easing.InCubic }', gameOverPanel);
+            anim.from = fromY; anim.to = toY; anim.target = gameOverPanel;
+            anim.running = true;
+            anim.onStopped.connect(function(){
+                // 关闭遮罩并恢复底层交互
+                overlayBlocker.enabled = false;
+                gameOverOverlay.visible = false;
+                if (gameOverOverlay._pendingRestart && mainWindow.gameBoard) {
+                    mainWindow.gameBoard.resetGame();
+                }
+            });
+        }
+    }
+
+    // 监听后端 gameOver 信号
+    Connections {
+        target: mainWindow.gameBoard
+        function onGameOver() {
+            gameOverOverlay._pendingRestart = false;
+            gameOverOverlay.showGameOver();
+        }
+    }
+
+
 }

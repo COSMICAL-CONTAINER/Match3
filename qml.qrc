@@ -58,5 +58,6 @@
         <file>music/SuperItem.wav</file>
         <file>music/Unbelivable.wav</file>
         <file>image/ui/made.png</file>
+        <file>image/ui/gameover.png</file>
     </qresource>
 </RCC>

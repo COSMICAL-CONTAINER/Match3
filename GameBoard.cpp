@@ -351,6 +351,8 @@ void GameBoard::rocketEffectTriggered(int row, int col, int type)
 
     qDebug() << "rocketEffectTriggered: clearedNow count" << clearedNow.size();
     updateScore(clearedNow.size() * 10);
+    // 单体火箭激活次数
+    addStatAt(6);
     emit boardChanged();
     processDrop();
 }
@@ -425,7 +427,8 @@ void GameBoard::bombEffectTriggered(int row, int col) {
     }
 
     updateScore(clearedNow.size() * 10);
-
+    // 单体炸弹激活次数
+    addStatAt(7);
     emit boardChanged();  // 发出更新棋盘信号
     processDrop();
 }
@@ -959,8 +962,15 @@ void GameBoard::applyGravity() {
 
 void GameBoard::removeMatchedTiles(const QVector<QPoint> &matches) {
     for (const QPoint &pt : matches) {
-        m_board[pt.x()][pt.y()] = ""; // 标记为空
-        // 如果有挂起的激活点，移除它（该位置已被清除，不应再阻塞填充）
+        QString v = m_board[pt.x()][pt.y()];
+        // 根据颜色递增统计（0-5）
+        if (v == "red") addStatAt(0);
+        else if (v == "green") addStatAt(1);
+        else if (v == "blue") addStatAt(2);
+        else if (v == "yellow") addStatAt(3);
+        else if (v == "purple") addStatAt(4);
+        else if (v == "brown") addStatAt(5);
+        m_board[pt.x()][pt.y()] = "";
         m_pendingActivations.remove(pt);
     }
     updateScore(matches.size() * 10);
@@ -1130,6 +1140,8 @@ void GameBoard::rocketRocketTriggered(int row, int col)
     }
     qDebug() << "rocketRocketTriggered: cleared cells:" << clearedNow.size();
     updateScore(clearedNow.size() * 10);
+    // 组合激活统计
+    addStatAt(9);
     emit boardChanged();
     processDrop();
     clearComboParticipants();
@@ -1212,6 +1224,8 @@ void GameBoard::bombBombTriggered(int row, int col)
     }
 
     updateScore(clearedNow.size() * 10);
+    // 组合激活统计
+    addStatAt(10);
     emit boardChanged();
     processDrop();
     clearComboParticipants();
@@ -1288,6 +1302,8 @@ void GameBoard::bombRocketTriggered(int row, int col, int rocketType)
     }
 
     updateScore(clearedNow.size() * 10);
+    // 组合激活统计
+    addStatAt(11);
     emit boardChanged();
     processDrop();
     clearComboParticipants();
@@ -1338,7 +1354,8 @@ void GameBoard::superRocketTriggered(int row, int col)
         schedulePropEffect(pt.x(), pt.y(), type, QString(), 500);
     }
 
-    // 计分
+    // 次数统计
+    addStatAt(12);
     updateScore(converted.size() * 10);
 }
 
@@ -1386,6 +1403,8 @@ void GameBoard::superBombTriggered(int row, int col)
         schedulePropEffect(pt.x(), pt.y(), BombType, QString(), 500);
     }
 
+    // 次数统计
+    addStatAt(13);
     // 计分
     updateScore(converted.size() * 10);
 }
@@ -1408,6 +1427,8 @@ Q_INVOKABLE void GameBoard::superSuperTriggered(int row, int col)
         }
     }
 
+    // 次数统计
+    addStatAt(14);
     updateScore(clearedNow.size() * 10);
     emit boardChanged();
     processDrop();
@@ -1514,6 +1535,8 @@ void GameBoard::superItemEffectTriggered(int row, int col, QString inputColor)
 
     qDebug() << "superItemEffectTriggered: cleared color" << chosen << "count:" << cleared;
     updateScore(cleared * 10);
+    // 单体超级激活次数
+    addStatAt(8);
     emit boardChanged();
     processDrop();
 }
@@ -1531,8 +1554,13 @@ void GameBoard::resetGame()
     m_step = m_init_step;
     m_score = 0;
     m_comboCnt = 0;
+    for(int i = 0; i < 12; ++i)
+    {
+        m_stats[i] = 0;
+    }
     emit scoreChanged(m_score);
     emit stepChanged(m_step);
+    emit statsChanged(stats());
     initializeBoard();
 }
 
