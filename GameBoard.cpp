@@ -91,7 +91,7 @@ void GameBoard::trySwap(int r1, int c1, int r2, int c2) {
 
     if (!isValidSwap(r1, c1, r2, c2)) {
         qDebug() << "无效交换";
-        emit invalidSwap(r1, c1, r2, c2);   // ❌ 只告诉 QML 播动画
+        emit invalidSwap(r1, c1, r2, c2);   // 只告诉 QML 播动画
         return;
     }
 
@@ -196,6 +196,11 @@ Q_INVOKABLE void GameBoard::finalizeSwap(int r1, int c1, int r2, int c2, bool is
         if (!isRecursion && !stepDeducted) { updateStep(-1); stepDeducted = true; }
         QVariantList variantMatches;
         for (const QPoint &pt : matches) { variantMatches.append(QVariant::fromValue(pt)); }
+        // 记录本次交换产生的道具集合，等待前端匹配动画播放完毕后再触发生成
+        m_reservedRocketMatches = rocketMatches;
+        m_reservedBombMatches = bombMatches;
+        m_reservedSuperItemMatches = superItemMatches;
+        m_reservedPropsPending = true;
         emit matchAnimationRequested(variantMatches);
         if (m_comboCnt > 1) emit comboChanged(m_comboCnt);
         return;
@@ -498,76 +503,67 @@ bool GameBoard::isProp(QString color)
 QVector<PropTypedef> GameBoard::findRocketMatches(int r1, int c1, int r2, int c2)
 {
     rocketMatches.clear();
-    // 横向查找
+
+    struct Match4 { bool horizontal; int line; int start; int end; QString color; };
+    QVector<Match4> matches;
+
+    // 收集横向 4 连
     for (int r = 0; r < m_rows; ++r) {
         for (int c = 0; c < m_columns - 3; ++c) {
             QString color = m_board[r][c];
             if (!isColor(color)) continue;
-
-            // 查找连续的 4 个相同颜色的方块
-            bool isMatch = true;
-            for (int i = 1; i < 4; ++i) {
-                if (m_board[r][c + i] != color) {
-                    isMatch = false;
-                    break;
-                }
-            }
-
-            if (isMatch) {
-                if(r == r1 && c == c1)
-                {
-                    qDebug() << QString("(%1, %2) 创建竖向火箭").arg(r2).arg(c2);
-                    rocketMatches.append({Rocket_UpDownType, QPoint(r2, c2)});
-                }
-                else if(r == r2 && c == c1)
-                {
-                    qDebug() << QString("(%1, %2) 创建竖向火箭").arg(r1).arg(c1);
-                    rocketMatches.append({Rocket_UpDownType, QPoint(r1, c1)});
-                }
-                else
-                {
-                    // 自然掉落
-                    qDebug() << QString("(%1, %2) 创建竖向火箭").arg(r).arg(c+1);
-                    rocketMatches.append({Rocket_UpDownType, QPoint(r, c + 1)});
-                }
-                // qDebug() << QString("(%1, %2) 创建竖向火箭").arg(r+c2-c).arg(c);
-                // rocketMatches.append({Rocket_UpDownType, QPoint(r+c2-c, c)});
-            }
+            bool ok = true;
+            for (int i = 1; i < 4; ++i) if (m_board[r][c+i] != color) { ok = false; break; }
+            if (ok) matches.append({true, r, c, c+3, color});
         }
     }
 
-    // 纵向查找
+    // 收集纵向 4 连
     for (int c = 0; c < m_columns; ++c) {
         for (int r = 0; r < m_rows - 3; ++r) {
             QString color = m_board[r][c];
             if (!isColor(color)) continue;
+            bool ok = true;
+            for (int i = 1; i < 4; ++i) if (m_board[r+i][c] != color) { ok = false; break; }
+            if (ok) matches.append({false, c, r, r+3, color});
+        }
+    }
 
-            // 查找连续的 4 个相同颜色的方块
-            bool isMatch = true;
-            for (int i = 1; i < 4; ++i) {
-                if (m_board[r + i][c] != color) {
-                    isMatch = false;
-                    break;
-                }
+    // 对每个匹配，优先使用交换点的显式 membership 判定
+    for (const Match4 &m : matches) {
+        if (m.horizontal) {
+            int row = m.line;
+            int start = m.start, end = m.end;
+            // 如果交换点 r1,c1 在该匹配格子集合内（并且当前颜色匹配），则优先生成在该点
+            if (r1 == row && c1 >= start && c1 <= end && m_board[r1][c1] == m.color) {
+                qDebug() << QString("(%1, %2) 创建竖向火箭(由交换端点1决定)").arg(r1).arg(c1);
+                rocketMatches.append({Rocket_UpDownType, QPoint(r1, c1)});
             }
-
-            if (isMatch) {
-                if(r == r1 && c == c1 )
-                {
-                    qDebug() << QString("(%1, %2) 创建横向火箭").arg(r2).arg(c2);
-                    rocketMatches.append({Rocket_LeftRightType, QPoint(r2, c2)});
-                }
-                else if(r == r2 && c == c1)
-                {
-                    qDebug() << QString("(%1, %2) 创建横向火箭").arg(r1).arg(c1);
-                    rocketMatches.append({Rocket_LeftRightType, QPoint(r1, c1)});
-                }
-                else
-                {
-                    // 自然掉落
-                    qDebug() << QString("(%1, %2) 创建竖向火箭").arg(r+1).arg(c);
-                    rocketMatches.append({Rocket_LeftRightType, QPoint(r + 1, c)});
-                }
+            else if (r2 == row && c2 >= start && c2 <= end && m_board[r2][c2] == m.color) {
+                qDebug() << QString("(%1, %2) 创建竖向火箭(由交换端点2决定)").arg(r2).arg(c2);
+                rocketMatches.append({Rocket_UpDownType, QPoint(r2, c2)});
+            }
+            else {
+                // 自然生成：匹配中点
+                int center = (start + end) / 2; // 对于 4 连，这里为 c+1
+                qDebug() << QString("(%1, %2) 创建竖向火箭(自然生成)").arg(row).arg(center);
+                rocketMatches.append({Rocket_UpDownType, QPoint(row, center)});
+            }
+        } else {
+            int col = m.line;
+            int start = m.start, end = m.end;
+            if (c1 == col && r1 >= start && r1 <= end && m_board[r1][c1] == m.color) {
+                qDebug() << QString("(%1, %2) 创建横向火箭(由交换端点1决定)").arg(r1).arg(c1);
+                rocketMatches.append({Rocket_LeftRightType, QPoint(r1, c1)});
+            }
+            else if (c2 == col && r2 >= start && r2 <= end && m_board[r2][c2] == m.color) {
+                qDebug() << QString("(%1, %2) 创建横向火箭(由交换端点2决定)").arg(r2).arg(c2);
+                rocketMatches.append({Rocket_LeftRightType, QPoint(r2, c2)});
+            }
+            else {
+                int center = (start + end) / 2; // 对于 4 连，这里为 r+1
+                qDebug() << QString("(%1, %2) 创建横向火箭(自然生成)").arg(center).arg(col);
+                rocketMatches.append({Rocket_LeftRightType, QPoint(center, col)});
             }
         }
     }
@@ -575,96 +571,54 @@ QVector<PropTypedef> GameBoard::findRocketMatches(int r1, int c1, int r2, int c2
     return rocketMatches;
 }
 
+
 QVector<PropTypedef> GameBoard::findBombMatches()
 {
     bombMatches.clear();
-    for (int r = 1; r < m_rows - 1; ++r) {
-        for (int c = 1; c < m_columns - 1; ++c) {
+
+    // 定义所有 T/L 形的偏移模式（以交点/拐点为中心）
+    const QVector<QVector<QPoint>> patterns = {
+        // T 向上: center, left, right, up1, up2
+        {{0,0},{0,-1},{0,1},{-1,0},{-2,0}},
+        // T 向下
+        {{0,0},{0,-1},{0,1},{1,0},{2,0}},
+        // T 向左
+        {{0,0},{-1,0},{1,0},{0,-1},{0,-2}},
+        // T 向右
+        {{0,0},{-1,0},{1,0},{0,1},{0,2}},
+
+        // L 交点在右上角 (horizontal left leg, vertical down leg)
+        {{0,0},{0,-1},{0,-2},{1,0},{2,0}},
+        // L 交点在左上角 (horizontal right leg, vertical down leg)
+        {{0,0},{0,1},{0,2},{1,0},{2,0}},
+        // L 交点在左下角 (horizontal right leg, vertical up leg)
+        {{0,0},{0,1},{0,2},{-1,0},{-2,0}},
+        // L 交点在右下角 (horizontal left leg, vertical up leg)
+        {{0,0},{0,-1},{0,-2},{-1,0},{-2,0}},
+
+        // 其他 L 变体（转置），以确保覆盖所有 8 种 L 方向
+        {{0,0},{1,0},{2,0},{0,-1},{0,-2}},
+        {{0,0},{1,0},{2,0},{0,1},{0,2}},
+        {{0,0},{-1,0},{-2,0},{0,1},{0,2}},
+        {{0,0},{-1,0},{-2,0},{0,-1},{0,-2}}
+    };
+
+    for (int r = 0; r < m_rows; ++r) {
+        for (int c = 0; c < m_columns; ++c) {
             QString color = m_board[r][c];
             if (!isColor(color)) continue;
-
-            // Helper function to avoid repeated boundary checks
-            auto isInBounds = [this](int r, int c) {
-                return r >= 0 && r < m_rows && c >= 0 && c < m_columns;
-            };
-
-            // 正向 T 字形 - 向上
-            if (isInBounds(r-1, c) && isInBounds(r-2, c) && isInBounds(r, c-1) && isInBounds(r, c+1)) {
-                if (m_board[r][c-1] == color && m_board[r][c+1] == color) {
-                    if (m_board[r-1][c] == color && m_board[r-2][c] == color) {
-                        bombMatches.append({BombType, QPoint(r, c)});  // 中心点
-                        qDebug() << QString("(%1, %2) %3 正向 T 字形 - 向上").arg(r).arg(c).arg(color);
-                    }
+            for (const auto &pat : patterns) {
+                bool ok = true;
+                for (const QPoint &off : pat) {
+                    int rr = r + off.x();
+                    int cc = c + off.y();
+                    if (rr < 0 || rr >= m_rows || cc < 0 || cc >= m_columns) { ok = false; break; }
+                    if (m_board[rr][cc] != color) { ok = false; break; }
                 }
-            }
-
-            // 正向 T 字形 - 向下
-            if (isInBounds(r+1, c) && isInBounds(r+2, c) && isInBounds(r, c-1) && isInBounds(r, c+1)) {
-                if (m_board[r][c-1] == color && m_board[r][c+1] == color) {
-                    if (m_board[r+1][c] == color && m_board[r+2][c] == color) {
-                        bombMatches.append({BombType, QPoint(r, c)});  // 中心点
-                        qDebug() << QString("(%1, %2) %3 正向 T 字形 - 向下").arg(r).arg(c).arg(color);
-                    }
-                }
-            }
-
-            // 倒 T 字形 - 向左
-            if (isInBounds(r-1, c) && isInBounds(r+1, c) && isInBounds(r, c-1) && isInBounds(r, c-2)) {
-                if (m_board[r-1][c] == color && m_board[r+1][c] == color) {
-                    if (m_board[r][c-1] == color && m_board[r][c-2] == color) {
-                        bombMatches.append({BombType, QPoint(r, c)});  // 中心点
-                        qDebug() << QString("(%1, %2) %3 倒 T 字形 向左").arg(r).arg(c).arg(color);
-                    }
-                }
-            }
-
-            // 倒 T 字形 - 向右
-            if (isInBounds(r-1, c) && isInBounds(r+1, c) && isInBounds(r, c+1) && isInBounds(r, c+2)) {
-                if (m_board[r-1][c] == color && m_board[r+1][c] == color) {
-                    if (m_board[r][c+1] == color && m_board[r][c+2] == color) {
-                        bombMatches.append({BombType, QPoint(r, c)});  // 中心点
-                        qDebug() << QString("(%1, %2) %3 倒 T 字形 - 向右").arg(r).arg(c).arg(color);
-                    }
-                }
-            }
-
-            // L 字形 - 交点在右上角
-            if (isInBounds(r+1, c) && isInBounds(r+2, c) && isInBounds(r, c-1) && isInBounds(r, c-2)) {
-                if (m_board[r][c-1] == color && m_board[r][c-2] == color) {
-                    if (m_board[r+1][c] == color && m_board[r+2][c] == color) {
-                        bombMatches.append({BombType, QPoint(r, c)});  // 中心点
-                        qDebug() << QString("(%1, %2) %3 L 字形 - 交点在右上角").arg(r).arg(c).arg(color);
-                    }
-                }
-            }
-
-            // L 字形 - 交点在左上角
-            if (isInBounds(r+1, c) && isInBounds(r+2, c) && isInBounds(r, c+1) && isInBounds(r, c+2)) {
-                if (m_board[r][c+1] == color && m_board[r][c+2] == color) {
-                    if (m_board[r+1][c] == color && m_board[r+2][c] == color) {
-                        bombMatches.append({BombType, QPoint(r, c)});  // 中心点
-                        qDebug() << QString("(%1, %2) %3 L 字形 - 交点在左上角").arg(r).arg(c).arg(color);
-                    }
-                }
-            }
-
-            // L 字形 - 交点在左下角
-            if (isInBounds(r-1, c) && isInBounds(r-2, c) && isInBounds(r, c+1) && isInBounds(r, c+2)) {
-                if (m_board[r-1][c] == color && m_board[r-2][c] == color) {
-                    if (m_board[r][c+1] == color && m_board[r][c+2] == color) {
-                        bombMatches.append({BombType, QPoint(r, c)});  // 中心点
-                        qDebug() << QString("(%1, %2) %3 L 字形 - 交点在左下角").arg(r).arg(c).arg(color);
-                    }
-                }
-            }
-
-            // L 字形 - 交点在右下角
-            if (isInBounds(r-1, c) && isInBounds(r-2, c) && isInBounds(r, c-1) && isInBounds(r, c-2)) {
-                if (m_board[r-1][c] == color && m_board[r-2][c] == color) {
-                    if (m_board[r][c-1] == color && m_board[r][c-2] == color) {
-                        bombMatches.append({BombType, QPoint(r, c)});  // 中心点
-                        qDebug() << QString("(%1, %2) %3 L 字形 - 交点在右下角").arg(r).arg(c).arg(color);
-                    }
+                if (ok) {
+                    bombMatches.append({BombType, QPoint(r, c)});
+                    qDebug() << QString("(%1, %2) %3 匹配炸弹模式").arg(r).arg(c).arg(color);
+                    break; // 一个中心点匹配到任一模式即可
                 }
             }
         }
@@ -834,16 +788,9 @@ QVector<QPoint> GameBoard::findMatches(int r1, int c1, int r2, int c2, bool argf
             bombMatches = filtered2;
         }
 
-        // 发射动画信号
-        if (!rocketMatches.isEmpty()) {
-            emit rocketCreateRequested(rocketMatches);
-        }
-        if (!bombMatches.isEmpty()) {
-            emit bombCreateRequested(bombMatches);
-        }
-        if (!superItemMatches.isEmpty()) {
-            emit superItemCreateRequested(superItemMatches);
-        }
+        // NOTE: do NOT emit create signals here. Creation animations should be emitted
+        // when processing matches after the front-end match animation finishes, so that
+        // the swap endpoints (r1,c1,r2,c2) context can be preserved across the animation.
     }
     // 返回所有匹配的方块
     matches.append(matchedSet.values().toVector());
@@ -1480,8 +1427,32 @@ Q_INVOKABLE void GameBoard::processMatches()
     QVector<QPoint> matches = findMatches(0, 0, 0, 0, true);
     if (!matches.isEmpty()) {
         qDebug() << "processMatches: found" << matches.size() << "matched tiles, removing and creating props";
+
+        // 如果之前 finalizeSwap 在交换时已计算并保留了道具位置，则优先使用保留的结果
+        if (m_reservedPropsPending) {
+            rocketMatches = m_reservedRocketMatches;
+            bombMatches = m_reservedBombMatches;
+            superItemMatches = m_reservedSuperItemMatches;
+            // 清除保留标记，避免重复
+            m_reservedPropsPending = false;
+            m_reservedRocketMatches.clear();
+            m_reservedBombMatches.clear();
+            m_reservedSuperItemMatches.clear();
+        }
+
+        // 在移除匹配前先通知前端播放道具生成动画（如果有）
+        if (!rocketMatches.isEmpty()) {
+            emit rocketCreateRequested(rocketMatches);
+        }
+        if (!bombMatches.isEmpty()) {
+            emit bombCreateRequested(bombMatches);
+        }
+        if (!superItemMatches.isEmpty()) {
+            emit superItemCreateRequested(superItemMatches);
+        }
+
+        // 然后移除匹配并实际在棋盘上创建道具
         removeMatchedTiles(matches);
-        // 在移除匹配后，创建由 findMatches 记录的道具（如果有）
         creatProp();
         emit boardChanged();
         // 处理下落（视觉由 QML 播放，随后 QML 调用 commitDrop）
@@ -1545,6 +1516,8 @@ void GameBoard::superItemEffectTriggered(int row, int col, QString inputColor)
 void GameBoard::startGame()
 {
     initializeBoard();
+    m_board[3][3] = SuperItem;
+    m_board[3][4] = Rocket_LeftRight;
 }
 
 // 新增：重置游戏（清空分数并重新生成棋盘）

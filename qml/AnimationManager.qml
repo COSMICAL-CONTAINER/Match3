@@ -212,9 +212,14 @@ Item {
         var w = isVertical ? thickness : length;
         var h = isVertical ? length : thickness;
         var gif = Qt.createQmlObject('import QtQuick 2.15; AnimatedImage { x: ' + (mapped.x - w/2) + '; y: ' + (mapped.y - h/2) + '; width: ' + w + '; height: ' + h + '; z: 9999; source: "' + source + '"; playing: true; cache: false; fillMode: Image.Stretch; smooth: true }', animManager);
+        console.log('showLineGifAtRowCol: created line gif', source, 'at', row, col, 'vertical?', isVertical, 'size', w, h, 'duration', durationMs);
         var killer = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: ' + (durationMs || 700) + '; repeat: false }', animManager);
-        killer.triggered.connect(function(){ if(gif) gif.destroy(); });
+        killer.triggered.connect(function(){ console.log('showLineGifAtRowCol: killer triggered for', source, row, col); if(gif) { try { gif.playing = false; gif.visible = false; gif.source = ""; } catch(e){} try { gif.destroy(); } catch(e){} } });
         killer.start();
+        // stop playback slightly before destruction
+        var stopper2 = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: ' + (Math.max(1, (durationMs || 700) - 80)) + '; repeat: false }', animManager);
+        stopper2.triggered.connect(function(){ console.log('showLineGifAtRowCol: stopper triggered for', source, row, col); try { if(gif) { gif.playing = false; gif.visible = false; gif.source = ""; if (typeof gif.frame !== 'undefined') gif.frame = 0; } } catch(e){} });
+        stopper2.start();
         return gif;
     }
 
@@ -222,10 +227,10 @@ Item {
     function runRocketEffect(row, col, type) {
         if (!gameBoard || !boardView) { console.error("runRocketEffect: missing gameBoard/boardView"); return; }
         var isVertical = (type === 1);
-        // 将长度提升到覆盖整行/整列边缘（略加 1.02 余量以避免边界取整导致的缺口）
+        // 将长度提升到覆盖整行/整列边缘（略加 1.08 余量以避免边界取整导致的缺口）
         showLineGifAtRowCol(row, col, isVertical,
                             isVertical ? 'qrc:/image/Animated/lighting_H.gif' : 'qrc:/image/Animated/lighting_V.gif',
-                            1.02, 1.6, 700);
+                            1.08, 1.6, 700);
 
         // 收集需要被清除的 tiles（整行或整列）
         var tilesToClear = [];
@@ -287,6 +292,10 @@ Item {
     // 小炸弹
     function runBombEffect(row, col, color) {
         console.log("runBombEffect:", row, col, "color:", color);
+        // 容错：若 color 未传入（undefined / empty），尝试从后端读取格子当前颜色作为后备
+        if (!color && gameBoard && typeof gameBoard.getTileColor === 'function') {
+            try { color = gameBoard.getTileColor(row, col); console.log('runBombEffect: fallback color from gameBoard:', color); } catch(e) { console.log('runBombEffect: fallback color failed', e); color = ""; }
+        }
         // 播放自适配小炸弹 GIF（5.5 格直径），并在 700ms 后销毁
         showGifAt(row, col, 'qrc:/image/Animated/smallbomb.gif', 700, { tileSpan: 5.5 });
 
@@ -333,9 +342,14 @@ Item {
             var localCy = tile ? (tile.y + tile.height/2) : (boardView.offsetY + row * cell + cell/2);
             var mappedC = boardView.mapToItem(animManager, localCx, localCy);
             var cGif = Qt.createQmlObject('import QtQuick 2.15; AnimatedImage { x: ' + (mappedC.x - maxDiam/2) + '; y: ' + (mappedC.y - maxDiam/2) + '; width: ' + maxDiam + '; height: ' + maxDiam + '; z: 9999; source: "qrc:/image/Animated/lighting_circle.gif"; playing: true; cache: false; fillMode: Image.PreserveAspectFit; smooth: true }', animManager);
+            console.log('runSuperItemEffect: created cGif at', row, col, 'diam', maxDiam);
             var cTimer = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: 800; repeat: false }', animManager);
-            cTimer.triggered.connect(function(){ if(cGif) cGif.destroy(); });
+            cTimer.triggered.connect(function(){ console.log('runSuperItemEffect: cTimer triggered'); if(cGif) { try { cGif.playing = false; cGif.visible = false; cGif.source = ""; } catch(e){} try { cGif.destroy(); } catch(e){} } });
             cTimer.start();
+            // stop playback slightly before destruction to avoid extra lingering frames
+            var cStopper = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: 720; repeat: false }', animManager);
+            cStopper.triggered.connect(function(){ console.log('runSuperItemEffect: cStopper triggered'); try { if(cGif) { cGif.playing = false; cGif.visible = false; cGif.source = ""; if (typeof cGif.frame !== 'undefined') cGif.frame = 0; } } catch(e){} });
+            cStopper.start();
         }
 
         var matchedTiles = [];
@@ -606,13 +620,40 @@ Item {
         var gif = Qt.createQmlObject(
             'import QtQuick 2.15; AnimatedImage { ' +
             '    x: ' + x + '; y: ' + y + '; width: ' + w + '; height: ' + h + '; ' +
-            '    z: 9999; source: "' + source + '"; playing: true; cache: false; ' +
-            '    fillMode: Image.PreserveAspectFit; smooth: true; ' +
+            '    z: 9999; source: "' + source + '"; playing: true; cache: false; fillMode: Image.PreserveAspectFit; smooth: true; ' +
             '}', animManager);
-
-        var killer = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: ' + durationMs + '; repeat: false }', animManager);
-        killer.triggered.connect(function(){ if (gif) gif.destroy(); });
+        console.log('showGifAt: created gif', source, 'at', row, col, 'size', w, h, 'duration', durationMs);
+        var killer = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: ' + (durationMs || 700) + '; repeat: false }', animManager);
+        killer.triggered.connect(function(){ console.log('showGifAt: killer triggered for', source, row, col); if (gif) { try { gif.playing = false; gif.visible = false; gif.source = ""; } catch(e){} try { gif.destroy(); } catch(e){} } });
         killer.start();
+        // stop playback earlier before destruction to avoid lingering final frames
+        var preStopGap = 160; // 提前多少毫秒开始停止（比之前的 80ms 更早以保证清理完成）
+        var stopperInterval = Math.max(1, (durationMs || 700) - preStopGap);
+        var stopper = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: ' + stopperInterval + '; repeat: false }', animManager);
+        stopper.triggered.connect(function(){
+            console.log('showGifAt: stopper triggered for', source, row, col, 'preStopGap=', preStopGap);
+            try {
+                if (gif) {
+                    // 先立即清空 source 并隐藏，尽量避免渲染出最后一帧
+                    try { gif.source = ""; gif.visible = false; } catch(e){}
+                    // 作为保险，再做一次稍长的 opacity 渐隐，确保渲染管线不会留下残影
+                    var fade = null;
+                    try {
+                        fade = Qt.createQmlObject('import QtQuick 2.15; NumberAnimation { property: "opacity"; duration: 80 }', animManager);
+                        fade.target = gif; fade.to = 0;
+                        fade.onFinished.connect(function(){
+                            try { gif.playing = false; gif.visible = false; if (typeof gif.frame !== 'undefined') gif.frame = 0; } catch(e){}
+                            try { fade.destroy(); } catch(e){}
+                        });
+                        fade.start();
+                    } catch(e) {
+                        // 若创建动画失败，则确保隐藏与停止
+                        try { gif.playing = false; gif.visible = false; if (typeof gif.frame !== 'undefined') gif.frame = 0; } catch(e){}
+                    }
+                }
+            } catch(e){}
+        });
+        stopper.start();
         return gif;
     }
 

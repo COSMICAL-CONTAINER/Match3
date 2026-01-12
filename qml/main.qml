@@ -251,7 +251,7 @@ ApplicationWindow {
             // 透明度动画，显示时渐变
             SequentialAnimation {
                 id: comboAnimation
-                running: gameBoard.comboCount > 1  // 只有连击数大于 1 时，才启动动画
+                running: false  // 由代码显式控制启动，避免绑定反复触发
                 NumberAnimation {
                     target: comboText
                     property: "opacity"
@@ -280,6 +280,7 @@ ApplicationWindow {
                 running: false
                 repeat: false
                 onTriggered: {
+                    console.log("hideTimer triggered: hiding comboText");
                     // 使用动画让文本渐变消失
                     var fadeOut = Qt.createQmlObject('import QtQuick 2.15; NumberAnimation { target: comboText; property: "opacity"; from: 1; to: 0; duration: 1000; easing.type: Easing.OutQuad }', comboDisplay);
                     fadeOut.start();  // 启动渐变动画
@@ -289,7 +290,8 @@ ApplicationWindow {
             // 每次动画结束后启动定时器
             onOpacityChanged: {
                 if (comboText.opacity === 1) {
-                    hideTimer.start()  // 启动定时器
+                    console.log("comboText visible, starting hideTimer");
+                    hideTimer.restart()  // 重启定时器，保证每次显示都能在2秒后隐藏
                 }
             }
         }
@@ -961,21 +963,33 @@ ApplicationWindow {
                 }
             }
             function onComboChanged(comboCount) {
-                // 当 C++ 层发送 comboChanged 信号时，更新 QML 层的连击数
-                // console.log("comboChanged:", comboCount);
+                console.log("onComboChanged:", comboCount);
+                // 更新文字
                 comboText.text = "连击 x" + comboCount;
+
+                // 停止并重置任何残留的计时器或动画，确保这次显示为一次完整的流程
+                hideTimer.stop();
+                comboImageHideTimer.stop();
+                comboImageLayer.visible = false;
+                comboText.opacity = 0;
+                comboText.scale = 1.0;
+
+                // 如果连击小于2则不显示动画（保持隐藏）
+                if (comboCount < 2) {
+                    console.log("onComboChanged: combo < 2, skip animation");
+                    return;
+                }
+
+                // 显示并启动动画及音效
                 comboAnimation.start();
 
-                // 同步显示图片层
-                if (comboCount >= 2) {
-                    comboImageLayer.visible = true;
-                    comboImageLayer.opacity = 0;
-                    comboImageAnim.start();
-                    comboImageHideTimer.start();
-                    // 播放音效（使用播放器池避免打断）
-                    var sfx = getComboSfx(comboCount);
-                    playComboSfx(sfx);
-                }
+                comboImageLayer.visible = true;
+                comboImageLayer.opacity = 0;
+                comboImageAnim.start();
+                comboImageHideTimer.restart();
+
+                var sfx = getComboSfx(comboCount);
+                playComboSfx(sfx);
             }
 
             function onInvalidSwap(r1, c1, r2, c2) {

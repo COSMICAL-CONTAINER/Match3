@@ -156,6 +156,12 @@ private:
     // 14 = 超级触发+超级触发
     int m_stats[15] = {0};
 
+    // 新增：保留由一次交换产生的道具集合，避免随后自动检测再重复发射创建信号
+    bool m_reservedPropsPending = false;
+    QVector<PropTypedef> m_reservedRocketMatches;
+    QVector<PropTypedef> m_reservedBombMatches;
+    QVector<PropTypedef> m_reservedSuperItemMatches;
+
     void initializeBoard();
     void fillNewTiles();
     bool isProp(QString color);
