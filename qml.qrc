@@ -59,5 +59,8 @@
         <file>music/Unbelivable.wav</file>
         <file>image/ui/made.png</file>
         <file>image/ui/gameover.png</file>
+        <file>music/bgm1.mp3</file>
+        <file>music/bgm2.mp3</file>
+        <file>music/bgm3.mp3</file>
     </qresource>
 </RCC>

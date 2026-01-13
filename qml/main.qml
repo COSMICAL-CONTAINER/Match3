@@ -197,6 +197,61 @@ ApplicationWindow {
     MediaPlayer { id: comboPlayer3; audioOutput: comboOut3 }
     MediaPlayer { id: comboPlayer4; audioOutput: comboOut4 }
 
+    // 背景音乐（开局即循环播放）
+    // 将音量再调小一些
+    property real bgmVolume: 0.25
+    // 单边淡入/淡出时长（毫秒）。将此值设为 2500 可得到约 5 秒总切换时长（2.5s 淡出 + 切歌 + 2.5s 淡入）
+    property int bgmFadeHalfMs: 2500
+    // bgm 列表与索引
+    property var bgmSources: ["qrc:/music/bgm1.mp3", "qrc:/music/bgm2.mp3", "qrc:/music/bgm3.mp3"]
+    property int bgmIndex: 0
+    AudioOutput { id: bgmOut; volume: mainWindow.bgmVolume }
+    MediaPlayer {
+        id: bgmPlayer
+        audioOutput: bgmOut
+        source: bgmSources[bgmIndex]
+    }
+
+    // 选择下首曲目（尽量与当前不同）
+    function pickNextBgmIndex() {
+        if (!bgmSources || bgmSources.length <= 1) return bgmIndex;
+        var next = bgmIndex;
+        for (var i = 0; i < 6; i++) {
+            next = Math.floor(Math.random() * bgmSources.length);
+            if (next !== bgmIndex) break;
+        }
+        if (next === bgmIndex) next = (bgmIndex + 1) % bgmSources.length;
+        return next;
+    }
+
+    // 平滑切换到下一首：淡出 -> 切换并播放 -> 淡入（总时长约 5 秒）
+    function switchToNextBgm() {
+        var targetVol = mainWindow.bgmVolume;
+        var curVol = bgmOut.volume;
+        var nextIndex = pickNextBgmIndex();
+        // 构造顺序动画（使用 Qt.createQmlObject），优先尝试平滑切换
+        var animQml = 'import QtQuick 2.15; SequentialAnimation { running: true; NumberAnimation { target: bgmOut; property: "volume"; from: ' + curVol + '; to: 0.0; duration: ' + mainWindow.bgmFadeHalfMs + '; easing.type: Easing.InOutQuad } ScriptAction { script: { bgmIndex = ' + nextIndex + '; bgmPlayer.source = bgmSources[bgmIndex]; Qt.callLater(function(){ try{ bgmPlayer.play(); }catch(e){} }); } } NumberAnimation { target: bgmOut; property: "volume"; from: 0.0; to: ' + targetVol + '; duration: ' + mainWindow.bgmFadeHalfMs + '; easing.type: Easing.InOutQuad } }';
+        try {
+            var seq = Qt.createQmlObject(animQml, mainWindow);
+            if (seq && seq.onStopped) seq.onStopped.connect(function(){ seq.destroy(); });
+        } catch (e) {
+            // 退化方案：直接切换并播放
+            bgmIndex = nextIndex;
+            bgmPlayer.source = bgmSources[bgmIndex];
+            Qt.callLater(function(){ try{ bgmPlayer.play(); }catch(e){} });
+        }
+    }
+
+    // 通过 Connections 监听 bgmPlayer 状态并触发平滑切换
+    Connections {
+        target: bgmPlayer
+        function onMediaStatusChanged(status) {
+            if (status === MediaPlayer.EndOfMedia) {
+                switchToNextBgm();
+            }
+        }
+    }
+
     function getIdleComboPlayer() {
         // 优先选择空闲播放器；若都在播放则轮询下一个
         var players = [comboPlayer1, comboPlayer2, comboPlayer3, comboPlayer4];

@@ -5,6 +5,9 @@ Item {
     property var boardView
     property var gameBoard
     property var tileMap: ({})
+    // internal warm-up bookkeeping (avoid dynamic property assignment errors)
+    property var _warmAnims: []
+    property bool _warmed: false
     property real cellSize: 50
     property bool busy: false
 
@@ -21,7 +24,24 @@ Item {
             gameBoard.dropAnimationRequested.connect(enqueueDrops);
             gameBoard.rollbackSwap.connect(rollbackSwap);
             console.log("动画管理器已连接到游戏板");
+            // 预热：提前创建常用动画对象，避免首次创建时在交换动画中卡顿
+            try { warmUpAnimations(); } catch(e) { console.log('warmUpAnimations failed', e); }
         }
+    }
+
+    // 预热函数：创建少量动画对象并在短时后销毁，触发 QML 引擎解析/加载开销
+    function warmUpAnimations() {
+        if (animManager._warmed) return;
+        try {
+            var a1 = Qt.createQmlObject('import QtQuick 2.15; ParallelAnimation { NumberAnimation { property: "offsetX"; duration: 1 } NumberAnimation { property: "offsetY"; duration: 1 } }', animManager);
+            var a2 = Qt.createQmlObject('import QtQuick 2.15; SequentialAnimation { ParallelAnimation { NumberAnimation { property: "scale"; duration: 1 } NumberAnimation { property: "opacity"; duration: 1 } } }', animManager);
+            animManager._warmAnims = [a1, a2];
+            var cleaner = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: 200; repeat: false }', animManager);
+            cleaner.triggered.connect(function(){ try { for(var i=0;i<animManager._warmAnims.length;i++){ try{ animManager._warmAnims[i].destroy(); }catch(e){} } animManager._warmAnims = []; } catch(e){} });
+            cleaner.start();
+            animManager._warmed = true;
+            console.log('warmUpAnimations: created warm objects');
+        } catch(e) { console.log('warmUpAnimations error', e); }
     }
 
     function findTile(row, col) {
@@ -111,8 +131,8 @@ Item {
                 SequentialAnimation {
                     ParallelAnimation { NumberAnimation { property:"scale"; to:1.2; duration:150; easing.type:Easing.OutQuad }
                                        NumberAnimation { property:"opacity"; to:0.5; duration:150; easing.type:Easing.OutQuad } }
-                    ParallelAnimation { NumberAnimation { property:"scale"; to:1.0; duration:150; easing.type:Easing.InQuad }
-                                       NumberAnimation { property:"opacity"; to:1.0; duration:150; easing.type:Easing.InQuad } }
+                    ParallelAnimation { NumberAnimation { property: "scale"; to: 1.0; duration: 150; easing.type:Easing.InQuad }
+                                       NumberAnimation { property: "opacity"; to: 1.0; duration: 150; easing.type:Easing.InQuad } }
                 }
             `, animManager);
             anim.animations[0].animations[0].target=tile;
