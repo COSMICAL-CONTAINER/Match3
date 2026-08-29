@@ -92,6 +92,12 @@ void GameEngine::runPropChain(QVector<PropTrigger> &queue) {
         if (alreadyFired(key)) continue;
         firedOnce.push_back(key);
 
+        // 组合触发的搭档道具已随组合消耗，不允许再被当作单体道具二次触发
+        if (t.isCombo && m_pendingComboPartner.x() >= 0) {
+            firedOnce.push_back(packRC(m_pendingComboPartner.x(), m_pendingComboPartner.y()));
+            m_pendingComboPartner = QPoint(-1, -1);
+        }
+
         uint8_t cur = m_board.tileAt(t.r, t.c);
         if (!isPropCode(cur)) {
             if (!t.isCombo) continue;
@@ -104,26 +110,21 @@ void GameEngine::runPropChain(QVector<PropTrigger> &queue) {
                 int rows = m_board.rows();
                 int cols = m_board.cols();
 
-                if (isPropCode(m_board.tileAt(t.r, t.c))) {
-                    m_board.setTile(t.r, t.c, 0);
-                    m_score += 10;
-                }
+                clearCellCounted(t.r, t.c);
 
                 if (pt == PropType::RocketVertical) {
                     for (int r = 0; r < rows; ++r) {
                         uint8_t v = m_board.tileAt(r, t.c);
                         if (v == 0) continue;
                         if (isPropCode(v)) newOnes.push_back({r, t.c, v, 0, false, ComboType::None, 0});
-                        m_board.setTile(r, t.c, 0);
-                        m_score += 10;
+                        clearCellCounted(r, t.c);
                     }
                 } else {
                     for (int c = 0; c < cols; ++c) {
                         uint8_t v = m_board.tileAt(t.r, c);
                         if (v == 0) continue;
                         if (isPropCode(v)) newOnes.push_back({t.r, c, v, 0, false, ComboType::None, 0});
-                        m_board.setTile(t.r, c, 0);
-                        m_score += 10;
+                        clearCellCounted(t.r, c);
                     }
                 }
 
@@ -132,10 +133,7 @@ void GameEngine::runPropChain(QVector<PropTrigger> &queue) {
             } else if (pt == PropType::BombProp) {
                 QVector<PropTrigger> newOnes;
 
-                if (isPropCode(m_board.tileAt(t.r, t.c))) {
-                    m_board.setTile(t.r, t.c, 0);
-                    m_score += 10;
-                }
+                clearCellCounted(t.r, t.c);
 
                 int radius = 2;
                 int rows = m_board.rows();
@@ -151,8 +149,7 @@ void GameEngine::runPropChain(QVector<PropTrigger> &queue) {
                         uint8_t v = m_board.tileAt(r, c);
                         if (v == 0) continue;
                         if (isPropCode(v)) newOnes.push_back({r, c, v, 0, false, ComboType::None, 0});
-                        m_board.setTile(r, c, 0);
-                        m_score += 10;
+                        clearCellCounted(r, c);
                     }
                 }
 
@@ -166,10 +163,7 @@ void GameEngine::runPropChain(QVector<PropTrigger> &queue) {
                 int rows = m_board.rows();
                 int cols = m_board.cols();
 
-                if (isPropCode(m_board.tileAt(t.r, t.c))) {
-                    m_board.setTile(t.r, t.c, 0);
-                    m_score += 10;
-                }
+                clearCellCounted(t.r, t.c);
 
                 if (color != 0) {
                     for (int r = 0; r < rows; ++r) {
@@ -178,13 +172,11 @@ void GameEngine::runPropChain(QVector<PropTrigger> &queue) {
                             if (v == 0) continue;
                             if (isPropCode(v)) {
                                 newOnes.push_back({r, c, v, 0, false, ComboType::None, 0});
-                                m_board.setTile(r, c, 0);
-                                m_score += 10;
+                                clearCellCounted(r, c);
                                 continue;
                             }
                             if (v == color) {
-                                m_board.setTile(r, c, 0);
-                                m_score += 10;
+                                clearCellCounted(r, c);
                             }
                         }
                     }
@@ -213,8 +205,7 @@ void GameEngine::runPropChain(QVector<PropTrigger> &queue) {
                     // 关键：组合中心格不应该再被 schedule 成“单体道具触发”
                     if (!(r == t.r && c == t.c) && isPropCode(v))
                         newOnes.push_back({r, c, v, 0, false, ComboType::None, 0});
-                    m_board.setTile(r, c, 0);
-                    m_score += 10;
+                    clearCellCounted(r, c);
                 }
             }
             queue += newOnes;
@@ -237,8 +228,7 @@ void GameEngine::runPropChain(QVector<PropTrigger> &queue) {
                         // 关键：组合中心格不应该再被 schedule 成“单体道具触发”
                         if (!(r == t.r && c == t.c) && isPropCode(v))
                             newOnes.push_back({r, c, v, 0, false, ComboType::None, 0});
-                        m_board.setTile(r, c, 0);
-                        m_score += 10;
+                        clearCellCounted(r, c);
                     }
                 }
             }
@@ -253,8 +243,7 @@ void GameEngine::runPropChain(QVector<PropTrigger> &queue) {
                         // 关键：组合中心格不应该再被 schedule 成“单体道具触发”
                         if (!(r == t.r && cc == t.c) && isPropCode(v))
                             newOnes.push_back({r, cc, v, 0, false, ComboType::None, 0});
-                        m_board.setTile(r, cc, 0);
-                        m_score += 10;
+                        clearCellCounted(r, cc);
                     }
                 }
             } else {
@@ -266,8 +255,7 @@ void GameEngine::runPropChain(QVector<PropTrigger> &queue) {
                         // 关键：组合中心格不应该再被 schedule 成“单体道具触发”
                         if (!(rr == t.r && c == t.c) && isPropCode(v))
                             newOnes.push_back({rr, c, v, 0, false, ComboType::None, 0});
-                        m_board.setTile(rr, c, 0);
-                        m_score += 10;
+                        clearCellCounted(rr, c);
                     }
                 }
             }
@@ -280,6 +268,17 @@ void GameEngine::runPropChain(QVector<PropTrigger> &queue) {
 GameEngine::GameEngine(int rows, int cols, int numColors)
     : m_board(rows, cols, numColors), m_score(0), m_step(0)
 {
+}
+
+void GameEngine::clearCellCounted(int r, int c) {
+    int rows = m_board.rows();
+    int cols = m_board.cols();
+    if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+    uint8_t v = m_board.tileAt(r, c);
+    if (v == 0) return;
+    if (v >= 1 && v <= 6) m_stats[v - 1]++; // 基础色消除统计
+    m_score += 10;
+    m_board.setTile(r, c, 0);
 }
 
 QString GameEngine::tileAt(int r, int c) const {
@@ -374,6 +373,8 @@ GameEngine::FinalizeResult GameEngine::finalizeSwap(int r1,int c1,int r2,int c2)
         out.propCol = c2;
         out.comboType = ComboType::None;
         out.comboRocketType = 0;
+        // 记录搭档道具坐标：组合触发时随组合消耗，不再二次单体触发
+        m_pendingComboPartner = QPoint(r1, c1);
 
         bool rocket1 = (t1 == PropType::RocketHorizontal || t1 == PropType::RocketVertical);
         bool rocket2 = (t2 == PropType::RocketHorizontal || t2 == PropType::RocketVertical);
@@ -465,7 +466,7 @@ QVector<BoardModel::Drop> GameEngine::removeMatches(const MatchResult &mr) {
         if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
         if (!toClear[r][c]) continue; // 已被保留为道具
         qDebug() << "  clear tile at (row,col)=" << r << c;
-        m_board.setTile(r, c, 0);
+        clearCellCounted(r, c);
     }
 
     qDebug() << "GameEngine::removeMatches applied, board:\n" << m_board.toString();
@@ -523,6 +524,9 @@ QVector<BoardModel::Drop> GameEngine::processAllMatches() {
 void GameEngine::startGame() {
     // 初始化棋盘：保证没有任何三消
     qDebug() << "GameEngine::startGame initializing board with no initial matches";
+
+    for (int i = 0; i < 15; ++i) m_stats[i] = 0;
+    m_pendingComboPartner = QPoint(-1, -1);
 
     int rows = m_board.rows();
     int cols = m_board.cols();
@@ -582,15 +586,9 @@ void GameEngine::startGame() {
 void GameEngine::resetGame() {
     m_score = 0;
     m_step = 0; // 如有步数逻辑，可按需重置
+    for (int i = 0; i < 15; ++i) m_stats[i] = 0;
+    m_pendingComboPartner = QPoint(-1, -1);
     startGame();
-
-    m_board.setTile(2, 2, 7);
-    m_board.setTile(2, 3, 8);
-    m_board.setTile(2, 4, 9);
-    m_board.setTile(1, 4, 9);
-    m_board.setTile(2, 5, 10);
-    m_board.setTile(3, 4, 7);
-    m_board.setTile(3, 2, 10);
 }
 
 void GameEngine::shuffleBoard() {
@@ -607,6 +605,7 @@ QVector<BoardModel::Drop> GameEngine::activateRocket(int row, int col, PropType 
     if (row < 0 || row >= rows || col < 0 || col >= cols) return drops;
 
     qDebug() << "GameEngine::activateRocket at" << row << col << "type" << (int)type;
+    addStat(6); // 单体火箭触发
 
     // 改为：火箭清行/列 + 链式触发（命中道具继续触发），最后统一下落一次
     QVector<PropTrigger> q;
@@ -626,6 +625,7 @@ QVector<BoardModel::Drop> GameEngine::activateBomb(int row, int col) {
     if (row < 0 || row >= rows || col < 0 || col >= cols) return drops;
 
     qDebug() << "GameEngine::activateBomb at" << row << col;
+    addStat(7); // 单体炸弹触发
 
     // 改为：炸弹爆炸 + 链式触发（命中道具继续触发），最后统一下落一次
     QVector<PropTrigger> q;
@@ -645,6 +645,7 @@ QVector<BoardModel::Drop> GameEngine::activateSuper(int row, int col, uint8_t co
     if (colorIndex == 0) return drops;
 
     qDebug() << "GameEngine::activateSuper at" << row << col << "colorIndex" << colorIndex;
+    addStat(8); // 单体超级道具触发
 
     // 清除触发的超级道具自身
     m_board.setTile(row, col, 0);
@@ -677,6 +678,7 @@ QVector<BoardModel::Drop> GameEngine::activateComboBombBomb(int row, int col) {
     if (row < 0 || row >= rows || col < 0 || col >= cols) return drops;
 
     qDebug() << "GameEngine::activateComboBombBomb at" << row << col;
+    addStat(10); // 炸弹+炸弹组合
 
     QVector<PropTrigger> q;
     q.push_back({row, col, 9, 0, true, ComboType::BombBomb, 0});
@@ -695,6 +697,7 @@ QVector<BoardModel::Drop> GameEngine::activateComboRocketRocket(int row, int col
     if (row < 0 || row >= rows || col < 0 || col >= cols) return drops;
 
     qDebug() << "GameEngine::activateComboRocketRocket at" << row << col;
+    addStat(9); // 火箭+火箭组合
 
     int cleared = 0;
     if (m_board.tileAt(row, col) != 0) { m_board.setTile(row, col, 0); ++cleared; }
@@ -726,6 +729,7 @@ QVector<BoardModel::Drop> GameEngine::activateComboBombRocket(int row, int col, 
     if (row < 0 || row >= rows || col < 0 || col >= cols) return drops;
 
     qDebug() << "GameEngine::activateComboBombRocket at" << row << col << "legacyRocketType" << legacyRocketType;
+    addStat(11); // 炸弹+火箭组合
 
     QVector<PropTrigger> q;
     q.push_back({row, col, 9, 0, true, ComboType::BombRocket, legacyRocketType});
@@ -739,6 +743,7 @@ QVector<BoardModel::Drop> GameEngine::activateComboBombRocket(int row, int col, 
 QVector<BoardModel::Drop> GameEngine::activateComboSuperBomb(int row, int col)
 {
     qDebug() << "GameEngine::activateComboSuperBomb (stage1: transform to bombs) at" << row << col;
+    addStat(13); // 超级+炸弹组合
 
     int rows = m_board.rows();
     int cols = m_board.cols();
@@ -822,6 +827,7 @@ QVector<BoardModel::Drop> GameEngine::executeComboSuperBomb(int row, int col)
 QVector<BoardModel::Drop> GameEngine::activateComboSuperRocket(int row, int col)
 {
     qDebug() << "GameEngine::activateComboSuperRocket (stage1: transform to rockets) at" << row << col;
+    addStat(12); // 超级+火箭组合
 
     int rows = m_board.rows();
     int cols = m_board.cols();
@@ -910,6 +916,7 @@ QVector<BoardModel::Drop> GameEngine::executeComboSuperRocket(int row, int col)
 QVector<BoardModel::Drop> GameEngine::activateComboSuperSuper(int row, int col)
 {
     qDebug() << "GameEngine::activateComboSuperSuper at" << row << col;
+    addStat(14); // 超级+超级组合
 
     int rows = m_board.rows();
     int cols = m_board.cols();

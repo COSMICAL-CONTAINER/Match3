@@ -104,6 +104,10 @@ signals:
 private:
     void initializeBoard();
     QVector<QPoint> findMatchesForSwap(int r1,int c1,int r2,int c2) const;
+    // 从引擎回读 score/stats，变化时发射对应信号
+    void syncProgress();
+    // 玩家有效移动后扣步，步数归零时发射 gameOver
+    void deductStep();
 
     int m_rows;
     int m_columns;

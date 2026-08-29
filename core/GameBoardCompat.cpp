@@ -15,13 +15,40 @@ GameBoardCompat::GameBoardCompat(QObject *parent, int rows, int columns)
 
     // 初始化分数和步数
     m_score = m_engine->score();
-    m_step  = m_engine->step();
+    m_step  = m_init_step;
 
     // 初始化棋盘，保证无初始三消
     if (m_engine) {
         m_engine->startGame();
         emit boardChanged();
     }
+}
+
+void GameBoardCompat::syncProgress() {
+    if (!m_engine) return;
+    const int s = m_engine->score();
+    if (s != m_score) {
+        m_score = s;
+        emit scoreChanged(s);
+    }
+    bool statsChangedFlag = false;
+    for (int i = 0; i < 15; ++i) {
+        const int v = m_engine->statAt(i);
+        if (v != m_stats[i]) {
+            m_stats[i] = v;
+            statsChangedFlag = true;
+        }
+    }
+    if (statsChangedFlag)
+        emit statsChanged(stats());
+}
+
+void GameBoardCompat::deductStep() {
+    if (m_step <= 0) return;
+    m_step -= 1;
+    emit stepChanged(m_step);
+    if (m_step == 0)
+        emit gameOver();
 }
 
 QString GameBoardCompat::tileAt(int row, int col) const {
@@ -43,6 +70,11 @@ QString GameBoardCompat::getRandomColorQml() const {
 void GameBoardCompat::startGame() {
     if (m_engine) {
         m_engine->startGame();
+        m_score = m_engine->score();
+        m_step = m_init_step;
+        emit scoreChanged(m_score);
+        emit stepChanged(m_step);
+        emit statsChanged(stats());
         emit boardChanged();
     }
 }
@@ -50,6 +82,11 @@ void GameBoardCompat::startGame() {
 void GameBoardCompat::resetGame() {
     if (m_engine) {
         m_engine->resetGame();
+        m_score = m_engine->score();
+        m_step = m_init_step;
+        emit scoreChanged(m_score);
+        emit stepChanged(m_step);
+        emit statsChanged(stats());
         emit boardChanged();
     }
 }
@@ -109,6 +146,8 @@ void GameBoardCompat::finalizeSwap(int r1, int c1, int r2, int c2, bool isRecurs
         qDebug() << "  SingleProp: emit propEffectRequested at" << row << col << "type=" << legacyType << "color=" << colorKey;
         emit propEffectRequested(row, col, legacyType, colorKey);
         // 不立即掉落，由 QML 在 xxxEffectTriggered -> activateXxx 后再发 dropAnimationRequested
+        syncProgress();
+        deductStep();
         emit boardChanged();
         return;
     }
@@ -147,6 +186,8 @@ void GameBoardCompat::finalizeSwap(int r1, int c1, int r2, int c2, bool isRecurs
         if (legacyType != 0) {
             qDebug() << "  ComboProp: emit propEffectRequested at" << row << col << "type=" << legacyType << "colorKey=" << colorKey;
             emit propEffectRequested(row, col, legacyType, colorKey);
+            syncProgress();
+            deductStep();
             emit boardChanged();
             return;
         }
@@ -166,6 +207,8 @@ void GameBoardCompat::finalizeSwap(int r1, int c1, int r2, int c2, bool isRecurs
             matchedTiles << m;
         }
         emit matchAnimationRequested(matchedTiles);
+        syncProgress();
+        deductStep();
         emit boardChanged();
         return;
     }
@@ -193,6 +236,7 @@ void GameBoardCompat::processMatches() {
     }
 
     emit dropAnimationRequested(dropPaths);
+    syncProgress();
     emit boardChanged();
 }
 
@@ -221,6 +265,7 @@ void GameBoardCompat::commitDrop() {
             matchedTiles << m;
         }
         emit matchAnimationRequested(matchedTiles);
+        syncProgress();
         emit boardChanged();
         return;
     }
@@ -240,6 +285,7 @@ void GameBoardCompat::commitDrop() {
     }
 
     emit dropAnimationRequested(dropPaths);
+    syncProgress();
     emit boardChanged();
 }
 
@@ -264,6 +310,7 @@ void GameBoardCompat::rocketEffectTriggered(int row, int col, int type) {
     }
 
     emit dropAnimationRequested(dropPaths);
+    syncProgress();
     emit boardChanged();
 }
 
@@ -287,6 +334,7 @@ void GameBoardCompat::bombEffectTriggered(int row, int col) {
     }
 
     emit dropAnimationRequested(dropPaths);
+    syncProgress();
     emit boardChanged();
 }
 
@@ -321,6 +369,7 @@ void GameBoardCompat::superItemEffectTriggered(int row, int col, QString color) 
     }
 
     emit dropAnimationRequested(dropPaths);
+    syncProgress();
     emit boardChanged();
 }
 
@@ -344,6 +393,7 @@ void GameBoardCompat::comboRocketRocketEffectTriggered(int row, int col) {
     }
 
     emit dropAnimationRequested(dropPaths);
+    syncProgress();
     emit boardChanged();
 }
 
@@ -364,6 +414,7 @@ Q_INVOKABLE void GameBoardCompat::comboBombBombEffectTriggered(int row, int col)
         dropPaths << m;
     }
     emit dropAnimationRequested(dropPaths);
+    syncProgress();
     emit boardChanged();
 }
 
@@ -384,6 +435,7 @@ Q_INVOKABLE void GameBoardCompat::comboBombRocketEffectTriggered(int row, int co
         dropPaths << m;
     }
     emit dropAnimationRequested(dropPaths);
+    syncProgress();
     emit boardChanged();
 }
 
@@ -397,6 +449,7 @@ Q_INVOKABLE void GameBoardCompat::comboSuperBombEffectTriggered(int row, int col
     QVector<BoardModel::Drop> drops = m_engine->activateComboSuperBomb(row, col);
     Q_UNUSED(drops);
 
+    syncProgress();
     emit boardChanged();
 }
 
@@ -423,6 +476,7 @@ void GameBoardCompat::executeComboSuperBomb(int row, int col)
     emit boardChanged();
     if (!qdrops.isEmpty())
         emit dropAnimationRequested(qdrops);
+    syncProgress();
 }
 
 // 组合：超级+火箭
@@ -435,6 +489,7 @@ Q_INVOKABLE void GameBoardCompat::comboSuperRocketEffectTriggered(int row, int c
     QVector<BoardModel::Drop> drops = m_engine->activateComboSuperRocket(row, col);
     Q_UNUSED(drops);
 
+    syncProgress();
     emit boardChanged();
 }
 
@@ -461,6 +516,7 @@ void GameBoardCompat::executeComboSuperRocket(int row, int col)
     emit boardChanged();
     if (!qdrops.isEmpty())
         emit dropAnimationRequested(qdrops);
+    syncProgress();
 }
 
 // 组合：超级+超级
@@ -481,6 +537,8 @@ Q_INVOKABLE void GameBoardCompat::comboSuperSuperEffectTriggered(int row, int co
         list.push_back(m);
     }
     emit dropAnimationRequested(list);
+    syncProgress();
+    emit boardChanged();
 }
 
 QVariantList GameBoardCompat::debugFindPossibleSwaps() const {

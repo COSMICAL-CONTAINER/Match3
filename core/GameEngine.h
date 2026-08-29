@@ -73,6 +73,10 @@ public:
     int score() const { return m_score; }
     int step() const { return m_step; }
 
+    // 15 项统计：0-5 六色消除数，6-8 单体道具触发（火箭/炸弹/超级），9-14 六种组合触发
+    int statAt(int i) const { return (i >= 0 && i < 15) ? m_stats[i] : 0; }
+    void addStat(int i) { if (i >= 0 && i < 15) ++m_stats[i]; }
+
     // 新增 : 单体道具激活接口
     // 火箭 : type = PropType::RocketHorizontal / RocketVertical
     QVector<BoardModel::Drop> activateRocket(int row, int col, PropType type);
@@ -97,6 +101,9 @@ private:
     // 道具链式触发辅助（爆炸/火箭命中其它道具会继续触发）
     uint8_t pickAnyBasicColorNear(int row, int col) const;
 
+    // 清除一格并统一计分/统计（基础色计入颜色统计，空格跳过）
+    void clearCellCounted(int r, int c);
+
     struct PropTrigger {
         int r = -1;
         int c = -1;
@@ -112,6 +119,11 @@ private:
     BoardModel m_board;
     int m_score = 0;
     int m_step = 0;
+    int m_stats[15] = {0};
+
+    // 组合交换中被吞掉的搭档道具坐标（finalizeSwap 记录，runPropChain 消费，
+    // 防止搭档在组合爆炸范围内又被当作单体道具二次触发）
+    QPoint m_pendingComboPartner{-1, -1};
 };
 
 } // namespace core
