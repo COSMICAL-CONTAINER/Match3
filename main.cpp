@@ -7,7 +7,7 @@
 #include <QQmlApplicationEngine>
 #include <QtQuickControls2/QQuickStyle>
 
-#include "GameBoard.h"
+#include "core/GameBoardCompat.h"
 
 int main(int argc, char *argv[])
 {
@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    GameBoard board;
+    GameBoardCompat board;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("gameBoardCpp", &board);
     const QUrl url(QStringLiteral("qrc:/qml/main.qml"));

@@ -858,90 +858,107 @@ ApplicationWindow {
                             }
 
                             onClicked: {
+                                if (!gameBoard) return;
+                                // 原有点击音效和日志保留
                                 simpleSfx.playExchangeAudio()
                                 var tileColor = gameBoard.tileAt(row, col)
                                 console.log("Tile clicked:", row, col, "color: ", tileColor);
                             }
+
                             onDoubleClicked:{
-                                // 双击激活道具
+                                // 双击激活道具（走方案B：preview steps -> 顺序播放 -> 后端结算）
+                                if (!gameBoard) return;
                                 var tileColor = gameBoard.tileAt(row, col)
-                                if (tileColor === "Rocket_1") {
-                                    console.log("播放火箭动画: ", row, col);
-                                    animManager.runRocketEffect(row, col, 1);
-                                } else if (tileColor === "Rocket_2") {
-                                    console.log("播放火箭动画: ", row, col);
-                                    animManager.runRocketEffect(row, col, 2);
-                                } else if (tileColor === "Bomb") {
-                                    console.log("播放炸弹动画: ", row, col);
-                                    animManager.runBombEffect(row, col);
-                                } else if (tileColor === "SuperItem") {
-                                    console.log("播放超级道具动画: ", row, col);
-                                    // 修改：仅统计上下左右四邻的常规颜色；若无则全盘随机选一种常规颜色
-                                    var colorCount = {};  // 记录颜色出现次数
-                                    var mostFrequentColor = ""; // 周围出现次数最多的颜色
+                                console.log("Tile double clicked:", row, col, "color:", tileColor);
 
-                                    // 上下左右四邻
-                                    var dirs = [ [ -1, 0 ], [ 1, 0 ], [ 0, -1 ], [ 0, 1 ] ];
-                                    for (var i = 0; i < dirs.length; i++) {
-                                        var rr = row + dirs[i][0];
-                                        var cc = col + dirs[i][1];
-                                        if (rr < 0 || rr >= gameArea.rows || cc < 0 || cc >= gameArea.cols) continue;
-                                        var color = gameBoard.tileAt(rr, cc);
-                                        // 只统计常规颜色，排除空和道具
-                                        if (color && color !== "" && color !== "Rocket_1" && color !== "Rocket_2" && color !== "Bomb" && color !== "SuperItem") {
-                                            colorCount[color] = (colorCount[color] || 0) + 1;
-                                        }
-                                    }
-
-                                    var keys = Object.keys(colorCount);
-                                    if (keys.length > 0) {
-                                        // 四邻里出现次数最多的颜色
-                                        mostFrequentColor = keys.reduce(function(a, b) {
-                                            return colorCount[a] >= colorCount[b] ? a : b;
-                                        });
-                                        animManager.runSuperItemEffect(row, col, mostFrequentColor);
-                                    } else {
-                                        // 四邻无可用颜色：从全盘常规颜色随机选一个作为激活颜色
-                                        var allColors = {};
-                                        for (var r = 0; r < gameArea.rows; r++) {
-                                            for (var c = 0; c < gameArea.cols; c++) {
-                                                var v = gameBoard.tileAt(r, c);
-                                                if (v && v !== "" && v !== "Rocket_1" && v !== "Rocket_2" && v !== "Bomb" && v !== "SuperItem") {
-                                                    allColors[v] = true;
-                                                }
+                                if (animManager && typeof animManager.activateTileAt === 'function') {
+                                    animManager.activateTileAt(row, col)
+                                } else {
+                                    // 兜底：旧逻辑
+                                    if (tileColor === "Rocket_1") {
+                                        animManager.runRocketEffect(row, col, 1);
+                                    } else if (tileColor === "Rocket_2") {
+                                        animManager.runRocketEffect(row, col, 2);
+                                    } else if (tileColor === "Bomb") {
+                                        animManager.runBombEffect(row, col);
+                                    } else if (tileColor === "SuperItem") {
+                                        // 旧逻辑保留（选择颜色后调用 runSuperItemEffect）
+                                        var colorCount = {};
+                                        var mostFrequentColor = "";
+                                        var dirs = [ [ -1, 0 ], [ 1, 0 ], [ 0, -1 ], [ 0, 1 ] ];
+                                        for (var i = 0; i < dirs.length; i++) {
+                                            var rr = row + dirs[i][0];
+                                            var cc = col + dirs[i][1];
+                                            if (rr < 0 || rr >= gameArea.rows || cc < 0 || cc >= gameArea.cols) continue;
+                                            var color = gameBoard.tileAt(rr, cc);
+                                            if (color && color !== "" && color !== "Rocket_1" && color !== "Rocket_2" && color !== "Bomb" && color !== "SuperItem") {
+                                                colorCount[color] = (colorCount[color] || 0) + 1;
                                             }
                                         }
-                                        var pool = Object.keys(allColors);
-                                        if (pool.length > 0) {
-                                            var idx = Math.floor(Math.random() * pool.length);
-                                            mostFrequentColor = pool[idx];
-                                            console.log("四邻无颜色，随机全盘选择: ", mostFrequentColor);
+                                        var keys = Object.keys(colorCount);
+                                        if (keys.length > 0) {
+                                            mostFrequentColor = keys.reduce(function(a, b) { return colorCount[a] >= colorCount[b] ? a : b; });
                                             animManager.runSuperItemEffect(row, col, mostFrequentColor);
                                         } else {
-                                            console.log("全盘也无常规颜色，跳过激活");
+                                            var allColors = {};
+                                            for (var r = 0; r < gameArea.rows; r++) {
+                                                for (var c = 0; c < gameArea.cols; c++) {
+                                                    var v = gameBoard.tileAt(r, c);
+                                                    if (v && v !== "" && v !== "Rocket_1" && v !== "Rocket_2" && v !== "Bomb" && v !== "SuperItem") {
+                                                        allColors[v] = true;
+                                                    }
+                                                }
+                                            }
+                                            var pool = Object.keys(allColors);
+                                            if (pool.length > 0) {
+                                                var idx = Math.floor(Math.random() * pool.length);
+                                                mostFrequentColor = pool[idx];
+                                                animManager.runSuperItemEffect(row, col, mostFrequentColor);
+                                            }
                                         }
                                     }
                                 }
                             }
+
                             onPositionChanged: function(mouse) {
                                 if (!dragging) return;
+                                if (!gameBoard || !animManager) return;
 
                                 // 计算拖动距离
                                 var dx = mouse.x - mouseArea.width/2
                                 var dy = mouse.y - mouseArea.height/2
 
-                                // 这里你可以用阈值判断方向
-                                if (Math.abs(dx) > cellSize/2 || Math.abs(dy) > cellSize/2) {
-                                    var targetRow = startRow + (Math.abs(dy) > Math.abs(dx) ? (dy>0?1:-1) : 0)
-                                    var targetCol = startCol + (Math.abs(dx) > Math.abs(dy) ? (dx>0?1:-1) : 0)
-
-                                    // console.log("Drag from", startRow, startCol, "to", targetRow, targetCol)
-
-                                    if (gameBoard) gameBoard.trySwap(startRow, startCol, targetRow, targetCol)
-                                    simpleSfx.playExchangeAudio()
-
-                                    dragging = false  // 只处理一次拖动
+                                // 判断主要方向（上下左右单步）
+                                var dir
+                                if (Math.abs(dx) > Math.abs(dy)) {
+                                    dir = dx > 0 ? Qt.RightEdge : Qt.LeftEdge
+                                } else {
+                                    dir = dy > 0 ? Qt.BottomEdge : Qt.TopEdge
                                 }
+
+                                var targetRow = startRow
+                                var targetCol = startCol
+                                if (dir === Qt.LeftEdge) targetCol--
+                                else if (dir === Qt.RightEdge) targetCol++
+                                else if (dir === Qt.TopEdge) targetRow--
+                                else if (dir === Qt.BottomEdge) targetRow++
+
+                                // 只在拖动超过半格时触发一次交换
+                                var threshold = gameArea.cellSize * 0.4
+                                if (Math.abs(dx) < threshold && Math.abs(dy) < threshold)
+                                    return;
+
+                                // 检查目标是否在棋盘内
+                                if (targetRow < 0 || targetRow >= gameArea.rows ||
+                                        targetCol < 0 || targetCol >= gameArea.cols)
+                                    return;
+
+                                console.log("drag swap from", startRow, startCol, "to", targetRow, targetCol)
+                                dragging = false
+                                tileRect.scale = 1.0
+
+                                // 通过动画管理器队列发起交换，而不是直接调用 gameBoard.trySwap
+                                animManager.enqueueSwap(startRow, startCol, targetRow, targetCol)
                             }
                         }
 
@@ -997,11 +1014,39 @@ ApplicationWindow {
             enabled: gameBoard !== undefined
 
             function onMatchAnimationRequested(matches) {
-                console.log("播放匹配动画:", matches)
-                if (simpleSfx && simpleSfx.playMatchAudio) simpleSfx.playMatchAudio();
-                animTimer.start()
+                // Normalize payload to [[row,col], ...] to avoid TypeError objects
+                try {
+                    var norm = [];
+                    if (matches && matches.length > 0) {
+                        var first = matches[0];
+                        if (typeof first === 'number') {
+                            for (var i=0; i+1<matches.length; i+=2) { norm.push([matches[i], matches[i+1]]); }
+                        } else if (Array.isArray(first)) {
+                            for (var j=0; j<matches.length; ++j) { var p = matches[j]; if (Array.isArray(p) && p.length>=2) norm.push([p[0], p[1]]); }
+                        } else if (typeof first === 'object' && first !== null) {
+                            for (var k=0; k<matches.length; ++k) { var m = matches[k]; var r = (typeof m.row === 'number') ? m.row : (Array.isArray(m) ? m[0] : null); var c = (typeof m.col === 'number') ? m.col : (Array.isArray(m) ? m[1] : null); if (r !== null && c !== null) norm.push([r,c]); }
+                        }
+                    }
+                    console.log("播放匹配动画:", norm);
+                    if (simpleSfx && simpleSfx.playMatchAudio) simpleSfx.playMatchAudio();
+                    if (animManager && typeof animManager.enqueueMatches === 'function') {
+                        animManager.enqueueMatches(norm);
+                    } else {
+                        try { animTimer.start(); } catch(e) { console.log('onMatchAnimationRequested fallback timer error', e); }
+                    }
+                } catch(e) {
+                    console.log('onMatchAnimationRequested normalize error', e, 'raw=', matches);
+                    // fail-safe: do not enqueue to avoid deadlock
+                }
             }
             function onBoardChanged() {
+                // 注意：动画过程中如果强制重置所有 tile（颜色/opacity/offset），会造成肉眼可见的“闪帧/跳变”。
+                // 例如你描述的：bbb 消失后，上一行短暂变成补位后的 bac，再立刻变回 abc，然后再开始下落。
+                // 所以：当动画管理器处于 busy（正在播放 match/drop/prop 动画）时，不在这里全量刷新。
+                if (animManager && animManager.busy) {
+                    return;
+                }
+
                 // 刷新所有tile的颜色并重置视觉状态
                 for (var i = 0; i < 64; i++) {
                     var item = boardRepeater.itemAt(i);
