@@ -33,3 +33,17 @@ struct LastSwapInfo {
 };
 
 } // namespace core
+
+// ===== 旧版道具类型常量（QML 动画协议使用，保持与历史 GameBoard.h 一致）=====
+static constexpr int Rocket_UpDownType    = 1;
+static constexpr int Rocket_LeftRightType = 2;
+static constexpr int BombType             = 3;
+static constexpr int SuperItemType        = 4;
+
+// 组合道具类型，用于在 propEffect 中编码复合激活（QML 识别并播放合成动画）
+static constexpr int Combo_RocketRocketType = 100;
+static constexpr int Combo_BombBombType     = 101;
+static constexpr int Combo_BombRocketType   = 102;
+static constexpr int Combo_SuperBombType    = 103; // 超级道具 + 炸弹
+static constexpr int Combo_SuperRocketType  = 104; // 超级道具 + 火箭
+static constexpr int Combo_SuperSuperType   = 105; // 超级道具 + 超级道具

@@ -5,7 +5,7 @@
 #include <QPoint>
 #include <QVariantList>
 #include <cstdint>
-#include "GameBoard.h"
+#include "Types.h"
 
 // forward declare core::GameEngine without polluting class scope
 namespace core { class GameEngine; class BoardModel; enum class PropType; }
@@ -19,6 +19,7 @@ class GameBoardCompat : public QObject {
     Q_PROPERTY(int step READ step NOTIFY stepChanged)
     Q_PROPERTY(int init_step READ init_step WRITE setInitStep NOTIFY init_stepChanged)
     Q_PROPERTY(int comboCount READ comboCount NOTIFY comboChanged)
+    Q_PROPERTY(QVariantList stats READ stats NOTIFY statsChanged)
 public:
     explicit GameBoardCompat(QObject *parent = nullptr, int rows = 8, int columns = 8);
 
@@ -122,9 +123,6 @@ private:
 
     // last matched tiles (populated in finalizeSwap) so processMatches can remove them
     QVector<QPoint> m_lastMatches;
-
-    // Legacy GameBoard instance: delegate to original implementation for full behavior
-    GameBoard *m_legacy = nullptr;
 
     // Core engine: new backend implementation (doesn't modify GameBoard.cpp)
     core::GameEngine *m_engine = nullptr;

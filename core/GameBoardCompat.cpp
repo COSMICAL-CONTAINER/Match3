@@ -10,7 +10,6 @@ GameBoardCompat::GameBoardCompat(QObject *parent, int rows, int columns)
     : QObject(parent), m_rows(rows), m_columns(columns)
 {
     // 使用新的 core GameEngine 作为后端
-    m_legacy = nullptr; // 不再触碰旧 GameBoard
     m_engine = new GameEngine(rows, columns, m_numColors);
 
     // 初始化分数和步数
