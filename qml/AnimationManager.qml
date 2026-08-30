@@ -1366,12 +1366,16 @@ Item {
                     return;
                 }
                 var rp = rocketPositions[index++];
-                console.log('runComboSuperRocket: trigger rocket at', rp.row, rp.col, 'type', rp.type);
-                runRocketEffect(rp.row, rp.col, rp.type);
+                console.log('runComboSuperRocket: trigger rocket visual at', rp.row, rp.col, 'type', rp.type);
 
-                var tmr2b = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: 50; repeat: false }', animManager);
-                tmr2b.triggered.connect(triggerNext);
-                tmr2b.start();
+                // visual-only：播完一个再播下一个，最后统一调用一次 executeComboSuperRocket 结算。
+                // 重要：这里绝对不能调用 runRocketEffect（它会触发后端 rocketEffectTriggered，
+                // 每支火箭都立即重力补位并发掉落请求，导致满屏空洞干等、掉落被排成长队慢慢放）
+                runRocketEffectVisual(rp.row, rp.col, rp.type, function(){
+                    var tmr2b = Qt.createQmlObject('import QtQuick 2.15; Timer { interval: 50; repeat: false }', animManager);
+                    tmr2b.triggered.connect(triggerNext);
+                    tmr2b.start();
+                });
             }
             triggerNext();
         }
