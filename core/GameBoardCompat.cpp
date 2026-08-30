@@ -1,6 +1,7 @@
 #include "GameBoardCompat.h"
 #include <QRandomGenerator>
 #include <QDebug>
+#include <QTimer>
 #include "GameEngine.h"
 #include <QMetaType>
 
@@ -19,7 +20,15 @@ GameBoardCompat::GameBoardCompat(QObject *parent, int rows, int columns)
     // 初始化棋盘，保证无初始三消
     if (m_engine) {
         m_engine->startGame();
+        ensureMovesAvailable();
         emit boardChanged();
+    }
+}
+
+void GameBoardCompat::ensureMovesAvailable() {
+    if (m_engine && !m_engine->hasAnyMove()) {
+        qDebug() << "GameBoardCompat::ensureMovesAvailable: no moves after deal, reshuffling";
+        m_engine->reshuffleKeepScore();
     }
 }
 
@@ -69,6 +78,7 @@ QString GameBoardCompat::getRandomColorQml() const {
 void GameBoardCompat::startGame() {
     if (m_engine) {
         m_engine->startGame();
+        ensureMovesAvailable();
         m_score = m_engine->score();
         m_step = m_init_step;
         emit scoreChanged(m_score);
@@ -81,6 +91,7 @@ void GameBoardCompat::startGame() {
 void GameBoardCompat::resetGame() {
     if (m_engine) {
         m_engine->resetGame();
+        ensureMovesAvailable();
         m_score = m_engine->score();
         m_step = m_init_step;
         emit scoreChanged(m_score);
@@ -93,6 +104,7 @@ void GameBoardCompat::resetGame() {
 void GameBoardCompat::shuffleBoard() {
     if (m_engine) {
         m_engine->shuffleBoard();
+        ensureMovesAvailable();
         emit boardChanged();
     }
 }
@@ -286,6 +298,17 @@ void GameBoardCompat::commitDrop() {
     emit dropAnimationRequested(dropPaths);
     syncProgress();
     emit boardChanged();
+
+    // 棋盘已稳定（本轮无掉落）且不存在任何可行交换：自动洗牌，保留分数/步数
+    if (drops.isEmpty() && !m_engine->hasAnyMove()) {
+        qDebug() << "GameBoardCompat::commitDrop: no possible moves, auto reshuffle";
+        QTimer::singleShot(600, this, [this]() {
+            if (!m_engine || m_engine->hasAnyMove()) return; // 延迟期间状态可能已变化
+            m_engine->reshuffleKeepScore();
+            syncProgress();
+            emit boardChanged();
+        });
+    }
 }
 
 void GameBoardCompat::rocketEffectTriggered(int row, int col, int type) {

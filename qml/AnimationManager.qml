@@ -543,17 +543,24 @@ Item {
         anim2.start();
     }
 
+    // 无效交换：方块左右抖动提示（fire-and-forget，不占用动画队列）
+    function shakeTile(tile) {
+        if (!tile) return;
+        var anim = Qt.createQmlObject(
+            'import QtQuick 2.15; SequentialAnimation {'
+          + ' NumberAnimation { property: "offsetX"; from: 0; to: 7; duration: 45; easing.type: Easing.InQuad }'
+          + ' NumberAnimation { property: "offsetX"; from: 7; to: -7; duration: 90; easing.type: Easing.InOutQuad }'
+          + ' NumberAnimation { property: "offsetX"; from: -7; to: 0; duration: 45; easing.type: Easing.OutQuad }'
+          + ' }', tile);
+        anim.finished.connect(function(){ try { anim.destroy(); } catch(e) {} });
+        anim.start();
+    }
+
     function rollbackSwap(r1,c1,r2,c2){
-        if(busy) return;
-        busy=true;
-        var t1=findTile(r1,c1), t2=findTile(r2,c2);
-        if(!t1||!t2){ busy=false; return; }
-        [t1,t2].forEach(function(t){
-            var rollback=Qt.createQmlObject('import QtQuick 2.15; ParallelAnimation { NumberAnimation { property: "offsetX"; to:0; duration:200 } NumberAnimation { property: "offsetY"; to:0; duration:200 } }', animManager);
-            rollback.animations[0].target=t; rollback.animations[1].target=t; rollback.start();
-        });
-        t1.offsetX=0; t1.offsetY=0; t2.offsetX=0; t2.offsetY=0;
-        busy=false;
+        // 数据层未发生交换（引擎判定无效直接回滚），这里只需抖动提示并把颜色刷新回引擎真实状态
+        shakeTile(findTile(r1,c1));
+        shakeTile(findTile(r2,c2));
+        refreshBoardColors();
     }
 
     // ===== 匹配动画：先播完，再调用后端 processMatches 计算真正删除和掉落 =====
@@ -816,7 +823,8 @@ Item {
                 try { isFillingHole = (tileTo.isMatched === true) || (tileTo.opacity === 0) || (tileTo.tileColor === 'transparent'); } catch(e) { isFillingHole = false; }
 
                 if (isSpawn || isFillingHole) {
-                    try { tileTo.opacity = 1.0; } catch(e) {}
+                    // 新生成的方块在下落过程中淡入，避免“瞬间闪现”
+                    try { tileTo.opacity = isSpawn ? 0.0 : 1.0; } catch(e) {}
                     try { if (typeof tileTo.scale !== 'undefined') tileTo.scale = 1.0; } catch(e) {}
                     try { tileTo.isMatched = false; } catch(e) {}
                 } else {
@@ -860,17 +868,22 @@ Item {
                     console.log('runDrops: error setting tileTo.color at', toR, toC, e);
                 }
 
-                var pxPerMs = 0.60; // 提高一点速度，减少“空洞停留”
-                var totalDur = Math.max(160, Math.floor(travelPx / pxPerMs));
-                if (totalDur > 520) totalDur = 520;
-                var fallDur   = totalDur * 0.75;
-                var squashDur = totalDur * 0.10;
-                var settleDur = totalDur * 0.15;
+                // 下落速度：稍放缓让轨迹可感知；同列尽量同一落速（像素/毫秒），起点必须真实
+                var travelPx = Math.abs(startOffset);
+                tileTo.offsetY = startOffset;
 
-                var seq = Qt.createQmlObject(
-                    'import QtQuick 2.15; SequentialAnimation { running: true; PropertyAnimation { id: a1 } PropertyAnimation { id: a2 } PropertyAnimation { id: a3 } }',
-                    tileTo
-                );
+                // 下落本体：加速落（InQuad）；落地后固定时长的挤压 + OutBack 回弹过冲，
+                // 让“砸下来→压扁→弹回”的节奏清晰可感，不再生硬突兀
+                var fallDur   = Math.max(200, Math.floor(travelPx / 0.45));
+                if (fallDur > 560) fallDur = 560;
+                var squashDur = 80;
+                var settleDur = 150;
+
+                var animStr = 'import QtQuick 2.15; SequentialAnimation { running: true;'
+                            + ' PropertyAnimation {} PropertyAnimation {} PropertyAnimation {}';
+                if (isSpawn) animStr += ' PropertyAnimation {}'; // 新方块：下落中淡入
+                animStr += ' }';
+                var seq = Qt.createQmlObject(animStr, tileTo);
 
                 seq.animations[0].target = tileTo;
                 seq.animations[0].property = 'offsetY';
@@ -882,22 +895,32 @@ Item {
                 seq.animations[1].target = tileTo;
                 seq.animations[1].property = 'scale';
                 seq.animations[1].from = 1.0;
-                seq.animations[1].to = 0.9;
+                seq.animations[1].to = 0.86;
                 seq.animations[1].duration = squashDur;
                 seq.animations[1].easing.type = Easing.OutQuad;
 
                 seq.animations[2].target = tileTo;
                 seq.animations[2].property = 'scale';
-                seq.animations[2].from = 0.9;
+                seq.animations[2].from = 0.86;
                 seq.animations[2].to = 1.0;
                 seq.animations[2].duration = settleDur;
-                seq.animations[2].easing.type = Easing.OutBounce;
+                seq.animations[2].easing.type = Easing.OutBack;
+
+                if (isSpawn) {
+                    seq.animations[3].target = tileTo;
+                    seq.animations[3].property = 'opacity';
+                    seq.animations[3].from = 0.0;
+                    seq.animations[3].to = 1.0;
+                    seq.animations[3].duration = Math.min(160, fallDur);
+                    seq.animations[3].easing.type = Easing.OutQuad;
+                }
 
                 pending++;
                 seq.finished.connect((function(anim, t){
                     return function(){
                         t.offsetY = 0;
                         t.scale = 1.0;
+                        t.opacity = 1.0;
                         pending--;
                         console.log('runDrops(cascade', _cascadeIndex, '): one anim finished, pending =', pending);
                         if (pending === 0 && !commitCalled) {

@@ -146,6 +146,14 @@ make            # Windows (MinGW): mingw32-make
 
 ---
 
+## ⚠️ Asset Disclaimer / 素材版权声明
+
+> [!IMPORTANT]
+> **English:** The source code of this project is licensed under the [MIT License](LICENSE). However, the game art (tile images, backgrounds, UI) and audio (BGM, sound effects) in `image/` and `music/` are from the mobile game **Anipop (开心消消乐)** and all rights belong to their original owner (**Happy Elements**). They are included **for learning and communication purposes only, non-commercial**. If you are the rights holder and object to their use here, please open an issue or contact me, and I will remove them immediately. Please do **not** use these assets in any commercial product.
+
+> [!IMPORTANT]
+> **中文：** 本项目的**源代码**基于 [MIT License](LICENSE) 开源。但 `image/` 与 `music/` 目录中的游戏美术素材（方块、背景、界面图）与音频（背景音乐、音效）来自手游**《开心消消乐》**，版权归原作者 **乐元素（Happy Elements）** 所有。这些素材**仅用于学习交流，严禁商用**。如权利人认为本项目的使用构成侵权，请提交 Issue 或联系我，我会立即移除相关素材。请勿将本项目中的任何素材用于任何商业用途。
+
 ## License / 许可
 
-See [LICENSE](LICENSE).
+The source code is released under the [MIT License](LICENSE). Game assets are **not** covered by it — see the disclaimer above. / 源代码基于 [MIT License](LICENSE) 开源；游戏素材**不在该授权范围内**，见上方版权声明。

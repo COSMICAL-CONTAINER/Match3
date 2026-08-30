@@ -70,6 +70,11 @@ public:
     void resetGame();
     void shuffleBoard();
 
+    // 棋盘上是否存在至少一个能产生三消的交换
+    bool hasAnyMove() const;
+    // 重新生成棋盘（保留分数/步数/统计），并保证至少有一个可行交换
+    void reshuffleKeepScore();
+
     int score() const { return m_score; }
     int step() const { return m_step; }
 
@@ -115,6 +120,9 @@ private:
     };
 
     void runPropChain(QVector<PropTrigger> &queue);
+
+    // 填充一整盘无初始三消的棋盘（不改动分数/统计）
+    void fillBoardNoMatches();
 
     BoardModel m_board;
     int m_score = 0;

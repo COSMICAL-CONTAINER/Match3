@@ -109,6 +109,8 @@ private:
     void syncProgress();
     // 玩家有效移动后扣步，步数归零时发射 gameOver
     void deductStep();
+    // 开局/重开后保证棋盘至少有一个可行交换
+    void ensureMovesAvailable();
 
     int m_rows;
     int m_columns;

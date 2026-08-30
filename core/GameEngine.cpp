@@ -528,6 +528,11 @@ void GameEngine::startGame() {
     for (int i = 0; i < 15; ++i) m_stats[i] = 0;
     m_pendingComboPartner = QPoint(-1, -1);
 
+    fillBoardNoMatches();
+}
+
+// 填充一整盘无初始三消的棋盘（不改动分数/统计）
+void GameEngine::fillBoardNoMatches() {
     int rows = m_board.rows();
     int cols = m_board.cols();
 
@@ -581,6 +586,40 @@ void GameEngine::startGame() {
             break;
         }
     }
+}
+
+// 棋盘上是否存在至少一个能产生三消的交换
+bool GameEngine::hasAnyMove() const {
+    int rows = m_board.rows();
+    int cols = m_board.cols();
+
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            // 只需尝试向右、向下交换即可覆盖所有相邻交换
+            const int dr[2] = {0, 1};
+            const int dc[2] = {1, 0};
+            for (int k = 0; k < 2; ++k) {
+                int r2 = r + dr[k];
+                int c2 = c + dc[k];
+                if (r2 >= rows || c2 >= cols) continue;
+                BoardModel copy = m_board;
+                copy.swapTiles(r, c, r2, c2);
+                if (!MatchFinder::findMatches(copy, nullptr).matched.isEmpty())
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+
+// 重新生成棋盘（保留分数/步数/统计），并保证至少有一个可行交换
+void GameEngine::reshuffleKeepScore() {
+    int guard = 0;
+    do {
+        fillBoardNoMatches();
+        ++guard;
+    } while (!hasAnyMove() && guard < 100);
+    qDebug() << "GameEngine::reshuffleKeepScore done, guard =" << guard;
 }
 
 void GameEngine::resetGame() {
