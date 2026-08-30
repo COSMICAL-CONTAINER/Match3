@@ -642,10 +642,14 @@ QVector<BoardModel::Drop> GameEngine::activateSuper(int row, int col, uint8_t co
     int rows = m_board.rows();
     int cols = m_board.cols();
     if (row < 0 || row >= rows || col < 0 || col >= cols) return drops;
-    if (colorIndex == 0) return drops;
 
     qDebug() << "GameEngine::activateSuper at" << row << col << "colorIndex" << colorIndex;
     addStat(8); // 单体超级道具触发
+
+    // 空颜色（如 QML 双击激活未指定目标色）时自动挑选邻近基础色
+    uint8_t color = colorIndex;
+    if (color == 0) color = pickAnyBasicColorNear(row, col);
+    if (color == 0) return drops;
 
     // 清除触发的超级道具自身
     m_board.setTile(row, col, 0);
@@ -655,7 +659,7 @@ QVector<BoardModel::Drop> GameEngine::activateSuper(int row, int col, uint8_t co
         for (int c = 0; c < cols; ++c) {
             uint8_t v = m_board.tileAt(r, c);
             if (v == 0) continue;
-            if (v == colorIndex) {
+            if (v == color) {
                 m_board.setTile(r, c, 0);
                 ++cleared;
             }

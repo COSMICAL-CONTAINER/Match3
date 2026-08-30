@@ -42,14 +42,60 @@ Swap adjacent tiles, match 3+, watch the cascade:
   <img src="https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/play.gif?raw=true" width="360" alt="basic gameplay"/>
 </p>
 
-### Rocket in action / 火箭道具实战
+### Props in action / 道具实战
 
-Double‑click a rocket prop to activate it — it clears the whole column and chains into any props it hits:
-
-双击火箭道具即可激活——清除整列，命中其它道具还会连锁引爆：
+**Rocket — lightning clears a whole column / 火箭 —— 闪电清除整列（或整行）：**
 
 <p align="center">
-  <img src="https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/gameplay.gif?raw=true" width="360" alt="rocket gameplay"/>
+  <img src="https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/gameplay.gif?raw=true" width="330" alt="rocket gameplay"/>
+</p>
+
+**Bomb — explodes everything in radius 2 / 炸弹 —— 爆炸清除半径 2 范围：**
+
+<p align="center">
+  <img src="https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/prop_bomb.gif?raw=true" width="330" alt="bomb demo"/>
+</p>
+
+**Super item — wipes all tiles of one color / 超级道具 —— 清除全场同色方块：**
+
+<p align="center">
+  <img src="https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/prop_super.gif?raw=true" width="330" alt="super item demo"/>
+</p>
+
+**Combo: Rocket + Rocket — clears a full row AND column / 组合：火箭+火箭 —— 行列十字清除：**
+
+<p align="center">
+  <img src="https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/combo_rocketrocket.gif?raw=true" width="330" alt="rocket rocket combo"/>
+</p>
+
+**Combo: Bomb + Rocket — blast plus triple lines / 组合：炸弹+火箭 —— 爆炸加三行（列）清除：**
+
+<p align="center">
+  <img src="https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/combo_bombrocket.gif?raw=true" width="330" alt="bomb rocket combo"/>
+</p>
+
+**Combo: Bomb + Bomb — massive radius‑4 blast / 组合：炸弹+炸弹 —— 半径 4 超级爆炸：**
+
+<p align="center">
+  <img src="https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/combo_bombbomb.gif?raw=true" width="330" alt="bomb bomb combo"/>
+</p>
+
+**Combo: Bomb + Super — turns a color into bombs, then detonates them all / 组合：炸弹+超级 —— 先把一色变成炸弹再全部引爆：**
+
+<p align="center">
+  <img src="https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/combo_bombsuper.gif?raw=true" width="330" alt="bomb super combo"/>
+</p>
+
+**Combo: Rocket + Super — turns a color into rockets, then fires them all / 组合：火箭+超级 —— 先把一色变成火箭再全部发射：**
+
+<p align="center">
+  <img src="https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/combo_rocketsuper.gif?raw=true" width="330" alt="rocket super combo"/>
+</p>
+
+**Combo: Super + Super — double full‑board wipe / 组合：超级+超级 —— 双重全场清除：**
+
+<p align="center">
+  <img src="https://github.com/COSMICAL-CONTAINER/Match3/blob/main/pic/combo_supersuper.gif?raw=true" width="330" alt="super super combo"/>
 </p>
 
 ### Pause menu / 暂停菜单

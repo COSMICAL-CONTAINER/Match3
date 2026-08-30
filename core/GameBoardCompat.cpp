@@ -664,17 +664,12 @@ QVariantList GameBoardCompat::previewPropChainFrom(int row, int col, int type, c
             // 横向火箭：清整行
             for (int c = 0; c < cols; ++c) clearCell(cur.r, c);
         } else if (cur.t == SuperItemType) {
-            // 超级：清一种颜色；同时命中道具也会触发
+            // 超级：只清目标颜色；场上的其它道具不应被连锁引爆（视觉与后端 activateSuper 保持一致）
             QString target = cur.color;
             if (target.isEmpty()) target = pickColorForSuperFromBoard(this, cur.r, cur.c);
             for (int r = 0; r < rows; r++) {
                 for (int c = 0; c < cols; c++) {
                     if (sim[r][c] == "transparent") continue;
-                    if (isPropName(sim[r][c])) {
-                        scheduleIfProp(r, c);
-                        sim[r][c] = "transparent";
-                        continue;
-                    }
                     if (!target.isEmpty() && sim[r][c] == target) sim[r][c] = "transparent";
                 }
             }

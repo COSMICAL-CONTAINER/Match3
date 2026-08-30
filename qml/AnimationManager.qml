@@ -1071,7 +1071,7 @@ Item {
             }
         }
 
-        showGifAt(row, col, 'qrc:/image/Animated/smallbomb.gif', 700, { tileSpan: 5.5 });
+        showGifAt(row, col, 'qrc:/image/Animated/smallbomb.gif', 450, { tileSpan: 5.5 });
 
         var affected = [];
         var radius = 2;
@@ -1123,7 +1123,7 @@ Item {
         var isVertical = (rocketType === 1);
         showLineGifAtRowCol(row, col, isVertical,
                             isVertical ? animManager.rocketGifVertical : animManager.rocketGifHorizontal,
-                            1.02, 1.6, 700);
+                            1.02, 1.6, 450);
 
         var rows = boardView.rows || animManager.rows;
         var cols = boardView.columns || animManager.cols;
@@ -1191,7 +1191,7 @@ Item {
         }
 
         // 大炸弹 GIF
-        showGifAt(row, col, 'qrc:/image/Animated/hugebomb.gif', 900, { tileSpan: 7.5 });
+        showGifAt(row, col, 'qrc:/image/Animated/hugebomb.gif', 650, { tileSpan: 7.5 });
 
         var affected = [];
         var radius = 3; // 稍大一点的圆形范围
